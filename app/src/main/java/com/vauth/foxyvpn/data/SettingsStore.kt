@@ -165,6 +165,29 @@ enum class HeroWaveAnimationStyle(
     PLASMA_VORTEX("Plasma Energy Vortex", "گرداب انرژی پلاسما", "دوامة طاقة البلازما"),
     STARFIELD_NOVA("Cosmic Nova Burst", "ابرنواختر کیهانی", "انفجار النوفا الكوني"),
     CYBER_HEX_SHIELD("Cyber Hexagon Shield", "سپر شش‌ضلعی سایبری", "درع السداسي السيبراني"),
+    QUANTUM_HELIX("Quantum Double Helix", "مارپیچ کوانتومی دوگانه", "حلزون كمومي مزدوج"),
+    LIQUID_SPECTRUM("3D Acoustic Spectrum", "طیف آکوستیک سه‌بعدی", "طيف الموجات الصوتية"),
+    AURORA_CROWN("Magnetic Crown Rings", "تاج مغناطیسی شفق", "حلقات التاج المغناطيسي"),
+    ;
+
+    fun localizedLabel(lang: AppLanguage): String = when (lang) {
+        AppLanguage.EN -> label
+        AppLanguage.FA -> persianLabel
+        AppLanguage.AR -> arabicLabel
+    }
+}
+
+enum class WaveColorMode(
+    val label: String,
+    val persianLabel: String,
+    val arabicLabel: String,
+    val colorHex: Long,
+) {
+    AUTO_STATUS("Auto Status Color", "هماهنگ با وضعیت اتصال", "تلقائي حسب الحالة", 0L),
+    SUNSET_ORANGE("Foxy Sunset Orange", "نارنجی آتشین فاکسی", "برتقالي فوكسي", 0xFFFF5E1A),
+    ROYAL_BLUE("Electric Royal Blue", "آبی الکتریک سلطنتی", "أزرق ملكي", 0xFF2E65F3),
+    EMERALD_MINT("Neon Emerald Mint", "سبز زمردی نئون", "أخضر زمردي", 0xFF18C964),
+    CYBER_VIOLET("Cyber Amethyst", "بنفش سایبری", "بنفسجي سيبراني", 0xFF9333EA),
     ;
 
     fun localizedLabel(lang: AppLanguage): String = when (lang) {
@@ -213,6 +236,10 @@ enum class DynamicIslandWaveStyle(
     RADAR_PULSE("Radar Sonar Rings", "پالس راداری دایره‌ای", "نبض الرادار الدائري"),
     ORBIT_DOTS("Orbital Particles", "ذرات چرخشی مدار", "جسيمات مدارية متحركة"),
     HEARTBEAT_WAVE("Live Heartbeat", "موج ضربان قلب", "موجة نبض القلب"),
+    DUAL_HELIX("DNA Double Helix", "موج مارپیچ دوگانه", "موجة الحلزون المزدوج"),
+    CYBER_SPECTRUM("Studio Spectrum", "آنالایزر طیفی استودیو", "محلل الطيف الاحترافي"),
+    SONIC_RIPPLE("Sonic Concentric", "موج صوتی متمرکز", "تموجات صوتية متمركزة"),
+    LASER_MATRIX("Laser Matrix Pulse", "ماتریکس لیزری زنده", "نبض مصفوفة الليزر"),
     ;
 
     fun localizedLabel(lang: AppLanguage): String = when (lang) {
@@ -231,28 +258,36 @@ enum class ConnectionProtocolMode(
     val descriptionAr: String,
 ) {
     AUTO(
-        label = "Smart Auto (HTTP/2 + HTTP/3)",
-        persianLabel = "خودکار هوشمند (HTTP/2 و HTTP/3)",
-        arabicLabel = "تلقائي ذكي (HTTP/2 و HTTP/3)",
-        descriptionEn = "Automatically selects the fastest compatible protocol for each server",
-        descriptionFa = "انتخاب خودکار بهترین پروتکل سازگار برای پایداری و سرعت بیشتر",
+        label = "Smart Auto (HTTP/3 + HTTP/2)",
+        persianLabel = "خودکار هوشمند (HTTP/3 و HTTP/2)",
+        arabicLabel = "تلقائي ذكي (HTTP/3 و HTTP/2)",
+        descriptionEn = "Automatically negotiates the fastest protocol with seamless fallback",
+        descriptionFa = "مذاکره خودکار سریع‌ترین پروتکل همراه با جایگزینی بدون قطعی",
         descriptionAr = "يختار تلقائياً أسرع بروتوكول متوافق لكل خادم",
     ),
     HTTP2_TCP(
-        label = "HTTP/2 over TLS (TCP)",
-        persianLabel = "پروتکل HTTP/2 (بر پایه TCP)",
-        arabicLabel = "بروتوكول HTTP/2 (عبر TCP)",
-        descriptionEn = "Multiplexed TLS 1.3 TCP tunnel with maximum firewall compatibility",
-        descriptionFa = "تونل رمزنگاری‌شده TCP با بیشترین سازگاری روی اینترنت‌های محدود",
+        label = "HTTP/2 Multiplexed (TCP/TLS)",
+        persianLabel = "پروتکل HTTP/2 مالتی‌پلکس (TCP/TLS)",
+        arabicLabel = "بروتوكول HTTP/2 المتعدد (TCP/TLS)",
+        descriptionEn = "Multiplexed TLS 1.3 ALPN h2 tunnel with high firewall compatibility",
+        descriptionFa = "تونل رمزنگاری‌شده چندجریانی TLS 1.3 با بیشترین پایداری",
         descriptionAr = "نفق TCP مشفر بأعلى توافق مع الشبكات المقيدة",
     ),
     HTTP3_QUIC(
-        label = "HTTP/3 / MASQUE (QUIC UDP)",
-        persianLabel = "پروتکل HTTP/3 (بر پایه QUIC)",
-        arabicLabel = "بروتوكول HTTP/3 (عبر QUIC)",
-        descriptionEn = "Low-latency UDP/QUIC transport with automatic TCP fallback if blocked",
-        descriptionFa = "پروتکل سریع و کم‌تاخیر QUIC با جایگزینی خودکار در صورت مسدود بودن UDP",
+        label = "HTTP/3 MASQUE (QUIC Low-Latency)",
+        persianLabel = "پروتکل HTTP/3 سریع (QUIC / MASQUE)",
+        arabicLabel = "بروتوكول HTTP/3 السريع (QUIC / MASQUE)",
+        descriptionEn = "Low-latency MASQUE / Extended CONNECT framing with 1360 MTU & fast ping",
+        descriptionFa = "پروتکل کم‌تاخیر MASQUE با فریم‌بندی سریع و پینگ بهینه",
         descriptionAr = "بروتوكول QUIC سريع ومنخفض التأخير مع بديل تلقائي",
+    ),
+    HTTP11_TLS(
+        label = "HTTP/1.1 Direct TLS (Anti-Throttle)",
+        persianLabel = "پروتکل HTTP/1.1 مستقیم (ضد محدودیت)",
+        arabicLabel = "بروتوكول HTTP/1.1 المباشر (مضاد للتقييد)",
+        descriptionEn = "Dedicated ALPN http/1.1 TLS sockets per flow to bypass HTTP/2 throttling",
+        descriptionFa = "سوکت‌های اختصاصی ALPN http/1.1 برای دور زدن محدودیت مالتی‌پلکس",
+        descriptionAr = "اتصال TLS مباشر لتجاوز تقييد الشبكات",
     ),
     ;
 
@@ -273,6 +308,7 @@ enum class ConnectionProtocolMode(
             AUTO -> "H3/H2"
             HTTP2_TCP -> "HTTP/2"
             HTTP3_QUIC -> "HTTP/3"
+            HTTP11_TLS -> "HTTP/1.1"
         }
 }
 
@@ -349,7 +385,7 @@ class SettingsStore(context: Context) {
     var appUiDesignStyle: FoxyUiDesignStyle
         get() = FoxyUiDesignStyle.entries.firstOrNull {
             it.name == prefs.getString(KEY_APP_UI_DESIGN_STYLE, null)
-        } ?: FoxyUiDesignStyle.CLAYMORPHISM
+        } ?: FoxyUiDesignStyle.NEUMORPHISM
         set(value) {
             prefs.edit().putString(KEY_APP_UI_DESIGN_STYLE, value.name).apply()
             _islandConfigRevision.value++
@@ -368,12 +404,43 @@ class SettingsStore(context: Context) {
             _islandConfigRevision.value++
         }
 
+    var waveSpeedMultiplier: Float
+        get() = runCatching { prefs.getFloat("wave_speed_multiplier", 1.0f) }.getOrDefault(1.0f).coerceIn(0.4f, 2.5f)
+        set(value) {
+            prefs.edit().putFloat("wave_speed_multiplier", value.coerceIn(0.4f, 2.5f)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var waveAmplitudeScale: Float
+        get() = runCatching { prefs.getFloat("wave_amplitude_scale", 1.0f) }.getOrDefault(1.0f).coerceIn(0.5f, 1.8f)
+        set(value) {
+            prefs.edit().putFloat("wave_amplitude_scale", value.coerceIn(0.5f, 1.8f)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var waveGlowEnabled: Boolean
+        get() = prefs.getBoolean("wave_glow_enabled", true)
+        set(value) {
+            prefs.edit().putBoolean("wave_glow_enabled", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var waveColorMode: WaveColorMode
+        get() = WaveColorMode.entries.firstOrNull {
+            it.name == prefs.getString("wave_color_mode", null)
+        } ?: WaveColorMode.AUTO_STATUS
+        set(value) {
+            prefs.edit().putString("wave_color_mode", value.name).apply()
+            _islandConfigRevision.value++
+        }
+
     var connectionProtocolMode: ConnectionProtocolMode
         get() = ConnectionProtocolMode.entries.firstOrNull {
             it.name == prefs.getString("connection_protocol_mode", null)
         } ?: ConnectionProtocolMode.AUTO
         set(value) {
             prefs.edit().putString("connection_protocol_mode", value.name).apply()
+            _islandConfigRevision.value++
         }
 
     var adBlockEnabled: Boolean
@@ -400,6 +467,41 @@ class SettingsStore(context: Context) {
         } ?: DynamicIslandWaveStyle.SIGNAL_TOWER
         set(value) {
             prefs.edit().putString("dynamic_island_wave_style", value.name).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandBgAlphaPercent: Int
+        get() = prefs.getInt("dynamic_island_bg_alpha_percent", 96).coerceIn(60, 100)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_bg_alpha_percent", value.coerceIn(60, 100)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandAutoCollapseSec: Int
+        get() = prefs.getInt("dynamic_island_auto_collapse_sec", 0).coerceIn(0, 60)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_auto_collapse_sec", value.coerceIn(0, 60)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandCompactTelemetry: Boolean
+        get() = prefs.getBoolean("dynamic_island_compact_telemetry", false)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_compact_telemetry", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandShowProtocolBadge: Boolean
+        get() = prefs.getBoolean("dynamic_island_show_protocol_badge", true)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_show_protocol_badge", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandHapticEnabled: Boolean
+        get() = prefs.getBoolean("dynamic_island_haptic_enabled", true)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_haptic_enabled", value).apply()
             _islandConfigRevision.value++
         }
 

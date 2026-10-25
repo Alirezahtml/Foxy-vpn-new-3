@@ -347,6 +347,17 @@ class FoxyVpnService : VpnService() {
             return START_STICKY
         } else if (action == ACTION_DISCONNECT) {
             requestDisconnect("requested by the user")
+        } else if (action == ACTION_SWITCH_PROTOCOL) {
+            val newMode = SettingsStore(applicationContext).connectionProtocolMode
+            _activeProtocolBadge.value = newMode.shortBadge
+            if (_state.value == ConnectionState.CONNECTED || _state.value == ConnectionState.CONNECTING) {
+                AppLogger.i(TAG, "live protocol switch requested -> ${newMode.shortBadge}; redialing upstream tunnel")
+                statusLabel = "Switching to ${newMode.shortBadge}\u2026"
+                updateNotification(statusLabel)
+                lastUnhealthyRedialAt = 0L
+                runCatching { upstreamSession?.close() }
+            }
+            return START_STICKY
         }
         return START_NOT_STICKY
     }
@@ -623,7 +634,8 @@ class FoxyVpnService : VpnService() {
                 }
             } else {
                 val target = activeCandidate()
-                "Connected \u2022 ${target.countryName.ifBlank { target.countryCode }}"
+                val protoBadge = _activeProtocolBadge.value
+                "Connected \u2022 ${target.countryName.ifBlank { target.countryCode }} [$protoBadge]"
             }
 
             if (proxyOnlyMode) {
@@ -785,13 +797,15 @@ class FoxyVpnService : VpnService() {
 
             suspend fun dialUpstream(): Pair<H2UpstreamSession, Long?> {
                 val target = activeCandidate()
+                val liveProtocolMode = settingsStore.connectionProtocolMode
+                _activeProtocolBadge.value = liveProtocolMode.shortBadge
                 val pass = mintProxyPass()
                 currentPassExpiry = pass.expiresAtEpochSeconds
                 val lifetimeNote = pass.expiresAtEpochSeconds?.let { expiresAt ->
                     val seconds = (expiresAt * 1_000L - System.currentTimeMillis()) / 1_000L
                     " (valid for ${seconds}s)"
                 } ?: " (lifetime not stated)"
-                AppLogger.i(TAG, "connect: acquired Guardian proxy pass$lifetimeNote")
+                AppLogger.i(TAG, "connect: acquired Guardian proxy pass$lifetimeNote (protocol=${liveProtocolMode.shortBadge})")
 
                 val edgeAddress = customEdgeAddress
                     ?: resolveEdgeAddress(target.host, upstreamProxyConfig, dohEndpointAddresses)
@@ -804,6 +818,7 @@ class FoxyVpnService : VpnService() {
                     edgeAddress,
                     tlsSplitMode = settingsStore.tlsSplitMode,
                     tcpBufferBoost = turboBuffers,
+                    protocolMode = liveProtocolMode,
                 )
                 try {
                     session.connect()
@@ -812,7 +827,11 @@ class FoxyVpnService : VpnService() {
                     runCatching { session.close() }
                     throw failure
                 }
-                AppLogger.i(TAG, "connect: upstream HTTP/2 tunnel established to ${target.authority}")
+                _activeProtocolBadge.value = session.negotiatedProtocolBadge
+                AppLogger.i(
+                    TAG,
+                    "connect: upstream tunnel [${session.negotiatedProtocolBadge}] established to ${target.authority}",
+                )
                 return session to pass.expiresAtEpochSeconds
             }
 
@@ -1469,6 +1488,7 @@ class FoxyVpnService : VpnService() {
     companion object {
         const val ACTION_CONNECT = "com.vauth.foxyvpn.neu.action.CONNECT"
         const val ACTION_DISCONNECT = "com.vauth.foxyvpn.neu.action.DISCONNECT"
+        const val ACTION_SWITCH_PROTOCOL = "com.vauth.foxyvpn.neu.action.SWITCH_PROTOCOL"
         private const val NOTIFICATION_ID = 1
         private const val REQUEST_CODE_OPEN = 0
         private const val REQUEST_CODE_DISCONNECT = 1
@@ -1503,6 +1523,9 @@ class FoxyVpnService : VpnService() {
         private val _idleTimerSeconds = MutableStateFlow(0L)
         val idleTimerSeconds: StateFlow<Long> = _idleTimerSeconds
 
+        private val _activeProtocolBadge = MutableStateFlow("AUTO")
+        val activeProtocolBadge: StateFlow<String> = _activeProtocolBadge
+
         suspend fun pingNow(): Int? {
             val endpoint = _connectedEndpoint.value ?: return null
             val latency = PingUtil.measureTcpLatencyMs(endpoint.first, endpoint.second)
@@ -1516,7 +1539,18 @@ class FoxyVpnService : VpnService() {
             return latency
         }
 
+        fun switchProtocol(context: Context, mode: com.vauth.foxyvpn.data.ConnectionProtocolMode) {
+            SettingsStore(context).connectionProtocolMode = mode
+            _activeProtocolBadge.value = mode.shortBadge
+            if (_state.value == ConnectionState.CONNECTED || _state.value == ConnectionState.CONNECTING) {
+                val intent = Intent(context, FoxyVpnService::class.java).setAction(ACTION_SWITCH_PROTOCOL)
+                runCatching { context.startService(intent) }
+                    .onFailure { AppLogger.w(TAG, "could not send live protocol switch intent", it) }
+            }
+        }
+
         fun start(context: Context) {
+            _activeProtocolBadge.value = SettingsStore(context).connectionProtocolMode.shortBadge
             val intent = Intent(context, FoxyVpnService::class.java).setAction(ACTION_CONNECT)
             runCatching {
                 context.startService(intent)

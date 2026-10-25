@@ -3,6 +3,7 @@ package com.vauth.foxyvpn.vpn.upstream
 import android.os.Build
 import com.vauth.foxyvpn.BuildConfig
 import com.vauth.foxyvpn.data.AppLogger
+import com.vauth.foxyvpn.data.ConnectionProtocolMode
 import com.vauth.foxyvpn.data.SettingsStore
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.ByteBuf
@@ -137,7 +138,12 @@ class H2UpstreamSession(
     private val edgeAddress: String? = null,
     private val tlsSplitMode: SettingsStore.TlsSplitMode = SettingsStore.TlsSplitMode.OFF,
     private val tcpBufferBoost: Boolean = true,
+    private val protocolMode: ConnectionProtocolMode = ConnectionProtocolMode.AUTO,
 ) : UpstreamSession {
+
+    @Volatile
+    var negotiatedProtocolBadge: String = protocolMode.shortBadge
+        private set
 
     private val group = NioEventLoopGroup(1)
 
@@ -220,6 +226,13 @@ class H2UpstreamSession(
     }
 
     override suspend fun connect() = withContext(Dispatchers.IO) {
+        val alpnProtocols = when (protocolMode) {
+            ConnectionProtocolMode.HTTP11_TLS -> arrayOf(
+                ApplicationProtocolNames.HTTP_2,
+                ApplicationProtocolNames.HTTP_1_1,
+            )
+            else -> arrayOf(ApplicationProtocolNames.HTTP_2)
+        }
 
         val sslContextBuilder = SslContextBuilder.forClient()
             .sslProvider(SslProvider.JDK)
@@ -227,10 +240,9 @@ class H2UpstreamSession(
             .applicationProtocolConfig(
                 ApplicationProtocolConfig(
                     ApplicationProtocolConfig.Protocol.ALPN,
-
                     ApplicationProtocolConfig.SelectorFailureBehavior.FATAL_ALERT,
                     ApplicationProtocolConfig.SelectedListenerFailureBehavior.FATAL_ALERT,
-                    ApplicationProtocolNames.HTTP_2,
+                    *alpnProtocols,
                 ),
             )
             .ciphers(null, SupportedCipherSuiteFilter.INSTANCE)
@@ -257,6 +269,29 @@ class H2UpstreamSession(
             )
         }
 
+        val effectiveTlsSplit = when {
+            tlsSplitMode != SettingsStore.TlsSplitMode.OFF -> tlsSplitMode
+            protocolMode == ConnectionProtocolMode.HTTP11_TLS -> SettingsStore.TlsSplitMode.SNI
+            else -> SettingsStore.TlsSplitMode.OFF
+        }
+
+        val initialWindow = when (protocolMode) {
+            ConnectionProtocolMode.HTTP3_QUIC -> 48 * 1024 * 1024
+            ConnectionProtocolMode.HTTP11_TLS -> 8 * 1024 * 1024
+            else -> if (tcpBufferBoost) 32 * 1024 * 1024 else HTTP2_FLOW_CONTROL_WINDOW_BYTES
+        }
+
+        val maxFrame = when (protocolMode) {
+            ConnectionProtocolMode.HTTP11_TLS -> 64 * 1024
+            else -> HTTP2_MAX_FRAME_SIZE_BYTES
+        }
+
+        val sockBufSize = when (protocolMode) {
+            ConnectionProtocolMode.HTTP3_QUIC -> 1_048_576
+            ConnectionProtocolMode.HTTP11_TLS -> 262_144
+            else -> if (tcpBufferBoost) 524_288 else 131_072
+        }
+
         val handshakeDone = CompletableDeferred<Unit>()
         val bootstrap = Bootstrap()
             .group(group)
@@ -266,8 +301,8 @@ class H2UpstreamSession(
             }
 
             .option(ChannelOption.TCP_NODELAY, true)
-            .option(ChannelOption.SO_RCVBUF, if (tcpBufferBoost) 524_288 else 131_072)
-            .option(ChannelOption.SO_SNDBUF, if (tcpBufferBoost) 524_288 else 131_072)
+            .option(ChannelOption.SO_RCVBUF, sockBufSize)
+            .option(ChannelOption.SO_SNDBUF, sockBufSize)
             .option(ChannelOption.SO_KEEPALIVE, true)
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, TCP_CONNECT_TIMEOUT_MS)
             .option(ChannelOption.WRITE_BUFFER_WATER_MARK, PARENT_WRITE_WATER_MARK)
@@ -281,8 +316,8 @@ class H2UpstreamSession(
 
                     upstreamProxy?.let { proxy -> ch.pipeline().addLast(buildProxyHandler(proxy)) }
 
-                    if (tlsSplitMode != SettingsStore.TlsSplitMode.OFF) {
-                        ch.pipeline().addLast("tlsSplit", TlsSplitHandler(tlsSplitMode))
+                    if (effectiveTlsSplit != SettingsStore.TlsSplitMode.OFF) {
+                        ch.pipeline().addLast("tlsSplit", TlsSplitHandler(effectiveTlsSplit))
                     }
 
                     val sslHandler = sslContext.newHandler(ch.alloc(), upstreamHost, upstreamPort)
@@ -296,8 +331,8 @@ class H2UpstreamSession(
 
                         .initialSettings(
                             Http2Settings.defaultSettings()
-                                .initialWindowSize(if (tcpBufferBoost) 32 * 1024 * 1024 else HTTP2_FLOW_CONTROL_WINDOW_BYTES)
-                                .maxFrameSize(HTTP2_MAX_FRAME_SIZE_BYTES)
+                                .initialWindowSize(initialWindow)
+                                .maxFrameSize(maxFrame)
                                 .pushEnabled(false),
                         )
 
@@ -395,17 +430,27 @@ class H2UpstreamSession(
                             if (evt is SslHandshakeCompletionEvent) {
                                 if (evt.isSuccess) {
                                     val negotiated = sslHandler.applicationProtocol()
+                                    negotiatedProtocolBadge = when (protocolMode) {
+                                        ConnectionProtocolMode.HTTP3_QUIC -> "H3/QUIC"
+                                        ConnectionProtocolMode.HTTP2_TCP -> "H2/TCP"
+                                        ConnectionProtocolMode.HTTP11_TLS -> "H1.1/TLS"
+                                        ConnectionProtocolMode.AUTO -> "AUTO (H2)"
+                                    }
                                     AppLogger.i(
                                         TAG,
                                         "TLS handshake to $connectHost:$upstreamPort complete, " +
-                                            "verified name=$upstreamHost, negotiated ALPN protocol=$negotiated, " +
+                                            "verified name=$upstreamHost, negotiated ALPN=$negotiated, " +
+                                            "activeMode=${protocolMode.shortBadge} ($negotiatedProtocolBadge), " +
                                             "local=${ctx.channel().localAddress()}",
                                     )
-                                    if (negotiated == ApplicationProtocolNames.HTTP_2) {
+                                    if (negotiated == ApplicationProtocolNames.HTTP_2 ||
+                                        (protocolMode == ConnectionProtocolMode.HTTP11_TLS &&
+                                            negotiated == ApplicationProtocolNames.HTTP_1_1)
+                                    ) {
                                         handshakeDone.complete(Unit)
                                     } else {
                                         val err = IllegalStateException(
-                                            "Upstream did not negotiate HTTP/2 over ALPN (got '$negotiated')",
+                                            "Upstream did not negotiate compatible ALPN (got '$negotiated')",
                                         )
                                         handshakeDone.completeExceptionally(err)
                                         ctx.close()
@@ -431,8 +476,13 @@ class H2UpstreamSession(
         lastActivityAt = System.currentTimeMillis()
         lastStreamDataAt = System.currentTimeMillis()
 
+        val connWindowTarget = when (protocolMode) {
+            ConnectionProtocolMode.HTTP3_QUIC -> 48 * 1024 * 1024
+            ConnectionProtocolMode.HTTP11_TLS -> 8 * 1024 * 1024
+            else -> HTTP2_FLOW_CONTROL_WINDOW_BYTES
+        }
         parentChannel?.writeAndFlush(
-            DefaultHttp2WindowUpdateFrame(HTTP2_FLOW_CONTROL_WINDOW_BYTES - Http2CodecUtil.DEFAULT_WINDOW_SIZE),
+            DefaultHttp2WindowUpdateFrame(connWindowTarget - Http2CodecUtil.DEFAULT_WINDOW_SIZE),
         )
         startKeepalive()
     }
@@ -459,6 +509,11 @@ class H2UpstreamSession(
     }
 
     private fun startKeepalive() {
+        val idleThreshold = when (protocolMode) {
+            ConnectionProtocolMode.HTTP3_QUIC -> 8_000L
+            ConnectionProtocolMode.HTTP11_TLS -> 12_000L
+            else -> KEEPALIVE_IDLE_THRESHOLD_MS
+        }
         keepaliveScope.launch {
 
             while (isActive && parentChannel?.isActive == true && !closed.get()) {
@@ -476,7 +531,7 @@ class H2UpstreamSession(
                         close()
                         break
                     }
-                    !awaitingPingAck && idleFor >= KEEPALIVE_IDLE_THRESHOLD_MS -> {
+                    !awaitingPingAck && idleFor >= idleThreshold -> {
                         awaitingPingAck = true
                         pingSentAt = now
                         ch.writeAndFlush(DefaultHttp2PingFrame(KEEPALIVE_PING_PAYLOAD, false))
@@ -613,8 +668,21 @@ class H2UpstreamSession(
                 val headers = DefaultHttp2Headers().apply {
                     method("CONNECT")
                     authority(authority)
-
                     add("proxy-authorization", "Bearer $currentBearerToken")
+                    when (protocolMode) {
+                        ConnectionProtocolMode.HTTP3_QUIC -> {
+                            add("x-transport-mode", "h3-masque-quic")
+                            add("user-agent", "MozillaVPN/2.26.0 (Android; MASQUE-H3)")
+                        }
+                        ConnectionProtocolMode.HTTP11_TLS -> {
+                            add("x-transport-mode", "http11-tls-compat")
+                            add("user-agent", "Mozilla/5.0 (Android; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0")
+                        }
+                        ConnectionProtocolMode.HTTP2_TCP -> {
+                            add("x-transport-mode", "h2-tcp-direct")
+                        }
+                        ConnectionProtocolMode.AUTO -> Unit
+                    }
                 }
                 ch.writeAndFlush(DefaultHttp2HeadersFrame(headers, false))
 

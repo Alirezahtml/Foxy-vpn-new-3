@@ -370,6 +370,7 @@ fun DynamicIsland(
     val liveStats by FoxyVpnService.vpnLiveStats.collectAsState()
     val connectedAtEpochMs by FoxyVpnService.connectedAtEpochMs.collectAsState()
     val pingLatency by FoxyVpnService.pingLatencyMs.collectAsState()
+    val activeProtocolBadge by FoxyVpnService.activeProtocolBadge.collectAsState()
 
     val neu = currentNeumorphicColors
     val statusColors = LocalFoxyStatusColors.current
@@ -378,9 +379,26 @@ fun DynamicIsland(
     val haptics = LocalHapticFeedback.current
 
     var isExpanded by remember { mutableStateOf(false) }
+    // Keep external overlay window width stable throughout the entire open/close spring animation
+    // so WindowManager never reallocates SurfaceFlinger buffers on intermediate frames!
+    var overlayAnimationCanvasActive by remember { mutableStateOf(false) }
     var showCustomizeModal by remember { mutableStateOf(false) }
     var showDirectAppPicker by remember { mutableStateOf(false) }
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(isExpanded) {
+        if (isExpanded) {
+            overlayAnimationCanvasActive = true
+            val autoCollapseSec = settingsStore.dynamicIslandAutoCollapseSec
+            if (autoCollapseSec > 0) {
+                delay(autoCollapseSec * 1_000L)
+                isExpanded = false
+            }
+        } else {
+            delay(280L)
+            overlayAnimationCanvasActive = false
+        }
+    }
 
     // Touch-drag position state for in-app dragging (synced with SettingsStore)
     var inAppOffsetX by remember(configRevision) { mutableFloatStateOf(settingsStore.dynamicIslandOffsetX) }
@@ -427,24 +445,25 @@ fun DynamicIsland(
     }
 
     val islandTheme = settingsStore.dynamicIslandTheme
+    val bgAlpha = (settingsStore.dynamicIslandBgAlphaPercent.coerceIn(55, 100) / 100f)
     val pillBrush = when (islandTheme) {
         SettingsStore.DynamicIslandTheme.DARK -> Brush.verticalGradient(
             colors = listOf(
-                Color(0xFF1F232B),
-                Color(0xFF15181E),
+                Color(0xFF1F232B).copy(alpha = bgAlpha),
+                Color(0xFF15181E).copy(alpha = bgAlpha),
             ),
         )
         SettingsStore.DynamicIslandTheme.ACCENT -> Brush.linearGradient(
             colors = listOf(
-                neu.accent,
-                neu.accent.copy(alpha = 0.92f),
+                neu.accent.copy(alpha = bgAlpha),
+                neu.accent.copy(alpha = (bgAlpha * 0.92f).coerceIn(0.5f, 1f)),
             ),
         )
         SettingsStore.DynamicIslandTheme.NEUMORPHIC -> Brush.verticalGradient(
             colors = if (neu.isDark) {
-                listOf(Color(0xFF23262D), Color(0xFF1A1C22))
+                listOf(Color(0xFF23262D).copy(alpha = bgAlpha), Color(0xFF1A1C22).copy(alpha = bgAlpha))
             } else {
-                listOf(Color(0xFFECEFF4), Color(0xFFDDE2EB))
+                listOf(Color(0xFFECEFF4).copy(alpha = bgAlpha), Color(0xFFDDE2EB).copy(alpha = bgAlpha))
             },
         )
     }
@@ -557,9 +576,19 @@ fun DynamicIsland(
 
     Box(
         modifier = modifier
-            .then(if (isSystemOverlay) Modifier else Modifier.fillMaxWidth())
+            .then(
+                if (isSystemOverlay) {
+                    if (isExpanded || overlayAnimationCanvasActive) {
+                        Modifier.width(368.dp)
+                    } else {
+                        Modifier
+                    }
+                } else {
+                    Modifier.fillMaxWidth()
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        contentAlignment = alignment,
+        contentAlignment = if (isSystemOverlay) Alignment.TopCenter else alignment,
     ) {
         val shape = RoundedCornerShape(pillCornerRadius)
 
@@ -633,7 +662,9 @@ fun DynamicIsland(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (settingsStore.dynamicIslandHapticEnabled) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
                     isExpanded = !isExpanded
                 },
             contentAlignment = Alignment.TopCenter,
@@ -707,6 +738,10 @@ fun DynamicIsland(
                                         active = settingsStore.dynamicIslandAnimation,
                                         color = statusColors.connected,
                                         waveStyle = settingsStore.dynamicIslandWaveStyle,
+                                        speedMultiplier = settingsStore.waveSpeedMultiplier,
+                                        amplitudeScale = settingsStore.waveAmplitudeScale,
+                                        glowEnabled = settingsStore.waveGlowEnabled,
+                                        colorMode = settingsStore.waveColorMode,
                                     )
                                 } else {
                                     Box(
@@ -723,6 +758,10 @@ fun DynamicIsland(
                                         active = true,
                                         color = statusColors.connecting,
                                         waveStyle = settingsStore.dynamicIslandWaveStyle,
+                                        speedMultiplier = settingsStore.waveSpeedMultiplier,
+                                        amplitudeScale = settingsStore.waveAmplitudeScale,
+                                        glowEnabled = settingsStore.waveGlowEnabled,
+                                        colorMode = settingsStore.waveColorMode,
                                     )
                                 } else {
                                     CircularProgressIndicator(
@@ -738,6 +777,10 @@ fun DynamicIsland(
                                         active = false,
                                         color = contentColor.copy(alpha = 0.65f),
                                         waveStyle = settingsStore.dynamicIslandWaveStyle,
+                                        speedMultiplier = settingsStore.waveSpeedMultiplier,
+                                        amplitudeScale = settingsStore.waveAmplitudeScale,
+                                        glowEnabled = settingsStore.waveGlowEnabled,
+                                        colorMode = settingsStore.waveColorMode,
                                     )
                                 } else {
                                     Box(
@@ -759,7 +802,7 @@ fun DynamicIsland(
                                     Text(flag, fontSize = (13f * manualScaleFactor.coerceIn(0.85f, 1.15f)).sp)
                                     Spacer(Modifier.width(6.dp))
                                 }
-                                if (settingsStore.dynamicIslandShowServerName && selectedProxy != null) {
+                                if (settingsStore.dynamicIslandShowServerName && selectedProxy != null && !settingsStore.dynamicIslandCompactTelemetry) {
                                     Text(
                                         text = s.language.localizeCountryName(selectedProxy.countryName, selectedProxy.countryCode),
                                         style = MaterialTheme.typography.labelMedium.copy(
@@ -782,7 +825,7 @@ fun DynamicIsland(
                                         color = contentColor,
                                         maxLines = 1,
                                     )
-                                } else if (!settingsStore.dynamicIslandShowServerName) {
+                                } else if (!settingsStore.dynamicIslandShowServerName || settingsStore.dynamicIslandCompactTelemetry) {
                                     Text(
                                         text = s.appName,
                                         style = MaterialTheme.typography.labelMedium.copy(
@@ -809,7 +852,7 @@ fun DynamicIsland(
                                         )
                                     }
                                 }
-                                if (settingsStore.dynamicIslandShowPing && pingLatency != null) {
+                                if (settingsStore.dynamicIslandShowPing && pingLatency != null && !settingsStore.dynamicIslandCompactTelemetry) {
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         text = s.language.formatPingLocalized(pingLatency!!),
@@ -818,6 +861,19 @@ fun DynamicIsland(
                                             fontWeight = FontWeight.SemiBold,
                                         ),
                                         color = contentColor.copy(alpha = 0.85f),
+                                        maxLines = 1,
+                                    )
+                                }
+                                if (settingsStore.dynamicIslandShowProtocolBadge && !settingsStore.dynamicIslandCompactTelemetry) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = activeProtocolBadge,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = fonts.monoFont,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp,
+                                        ),
+                                        color = neu.accent,
                                         maxLines = 1,
                                     )
                                 }
@@ -865,8 +921,15 @@ fun DynamicIsland(
                     // Expanded Native Dynamic Island Sheet
                     Column(
                         modifier = Modifier
-                            .widthIn(max = maxOf(460.dp, scaledMinWidth + 24.dp))
-                            .fillMaxWidth()
+                            .then(
+                                if (isSystemOverlay) {
+                                    Modifier.width(344.dp)
+                                } else {
+                                    Modifier
+                                        .widthIn(max = maxOf(460.dp, scaledMinWidth + 24.dp))
+                                        .fillMaxWidth()
+                                },
+                            )
                             .padding(horizontal = 18.dp, vertical = 16.dp),
                     ) {
                         // Header Row
@@ -884,6 +947,10 @@ fun DynamicIsland(
                                         active = state == ConnectionState.CONNECTED || state == ConnectionState.CONNECTING,
                                         color = activeStatusColor,
                                         waveStyle = settingsStore.dynamicIslandWaveStyle,
+                                        speedMultiplier = settingsStore.waveSpeedMultiplier,
+                                        amplitudeScale = settingsStore.waveAmplitudeScale,
+                                        glowEnabled = settingsStore.waveGlowEnabled,
+                                        colorMode = settingsStore.waveColorMode,
                                     )
                                     Spacer(Modifier.width(8.dp))
                                 }
@@ -934,10 +1001,15 @@ fun DynamicIsland(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                        if (settingsStore.dynamicIslandShowIpBadge && selectedProxy != null) {
+                                        if ((settingsStore.dynamicIslandShowIpBadge || settingsStore.dynamicIslandShowProtocolBadge) && selectedProxy != null) {
                                             Spacer(Modifier.width(6.dp))
+                                            val protoText = if (settingsStore.dynamicIslandShowProtocolBadge) {
+                                                activeProtocolBadge
+                                            } else {
+                                                "H2/TLS"
+                                            }
                                             Text(
-                                                text = "• H2/TLS :${s.language.localizeNumber(selectedProxy.port)}",
+                                                text = "• $protoText :${s.language.localizeNumber(selectedProxy.port)}",
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     fontFamily = fonts.monoFont,
                                                     fontWeight = FontWeight.Bold,
@@ -1087,6 +1159,7 @@ fun DynamicIsland(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
+                                    Spacer(Modifier.width(2.dp))
                                     pinnedApps.forEach { appItem ->
                                         Box(
                                             modifier = Modifier
@@ -1201,6 +1274,7 @@ fun DynamicIsland(
                                             }
                                         }
                                     }
+                                    Spacer(Modifier.width(2.dp))
                                 }
                             }
                         }
@@ -1275,6 +1349,369 @@ fun DynamicIsland(
 }
 
 /**
+ * Interactive Live In-App Preview Stage for Dynamic Island & Wave Studio customization.
+ * Allows toggling between Collapsed Pill and Expanded Sheet in real time while adjusting sliders/options.
+ */
+@Composable
+fun DynamicIslandLivePreviewCard(
+    settingsStore: SettingsStore,
+    modifier: Modifier = Modifier,
+) {
+    val configRevision by settingsStore.islandConfigRevision.collectAsState()
+    @Suppress("UNUSED_EXPRESSION")
+    configRevision
+
+    val s = currentFoxyStrings
+    val neu = currentNeumorphicColors
+    val fonts = currentFoxyFonts
+    val statusColors = LocalFoxyStatusColors.current
+    val activeProtocolBadge by FoxyVpnService.activeProtocolBadge.collectAsState()
+
+    var previewExpanded by remember { mutableStateOf(false) }
+
+    val islandTheme = settingsStore.dynamicIslandTheme
+    val bgAlpha = (settingsStore.dynamicIslandBgAlphaPercent.coerceIn(55, 100) / 100f)
+    val pillBrush = when (islandTheme) {
+        SettingsStore.DynamicIslandTheme.DARK -> Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF1F232B).copy(alpha = bgAlpha),
+                Color(0xFF15181E).copy(alpha = bgAlpha),
+            ),
+        )
+        SettingsStore.DynamicIslandTheme.ACCENT -> Brush.linearGradient(
+            colors = listOf(
+                neu.accent.copy(alpha = bgAlpha),
+                neu.accent.copy(alpha = (bgAlpha * 0.92f).coerceIn(0.5f, 1f)),
+            ),
+        )
+        SettingsStore.DynamicIslandTheme.NEUMORPHIC -> Brush.verticalGradient(
+            colors = if (neu.isDark) {
+                listOf(Color(0xFF23262D).copy(alpha = bgAlpha), Color(0xFF1A1C22).copy(alpha = bgAlpha))
+            } else {
+                listOf(Color(0xFFECEFF4).copy(alpha = bgAlpha), Color(0xFFDDE2EB).copy(alpha = bgAlpha))
+            },
+        )
+    }
+
+    val contentColor = when (islandTheme) {
+        SettingsStore.DynamicIslandTheme.DARK -> Color.White
+        SettingsStore.DynamicIslandTheme.ACCENT -> Color.White
+        SettingsStore.DynamicIslandTheme.NEUMORPHIC -> neu.textPrimary
+    }
+
+    val scalePercent = settingsStore.dynamicIslandScalePercent.coerceIn(0, 100)
+    val scaleFactor = (0.76f + (scalePercent / 100f) * 0.44f).coerceIn(0.70f, 1.22f)
+    val cornerDp = if (previewExpanded) 24.dp else (settingsStore.dynamicIslandCornerRadius.coerceIn(18, 42) * scaleFactor).coerceIn(16f, 40f).dp
+    val previewShape = RoundedCornerShape(cornerDp)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(neu.background.copy(alpha = 0.85f))
+            .border(
+                width = 1.dp,
+                color = neu.accent.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(20.dp),
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(statusColors.connected),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = when (s.language) {
+                        FoxyLanguage.FA -> "پیش‌نمایش زنده داینامیک آیلند"
+                        FoxyLanguage.AR -> "معاينة حية للجزيرة التفاعلية"
+                        FoxyLanguage.EN -> "Live Dynamic Island Preview"
+                    },
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = fonts.headingFont,
+                        fontWeight = FontWeight.ExtraBold,
+                    ),
+                    color = neu.textPrimary,
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(neu.accent.copy(alpha = 0.12f))
+                    .padding(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val collapsedLabel = when (s.language) {
+                    FoxyLanguage.FA -> "حالت بسته"
+                    FoxyLanguage.AR -> "مصغر"
+                    FoxyLanguage.EN -> "Collapsed"
+                }
+                val expandedLabel = when (s.language) {
+                    FoxyLanguage.FA -> "حالت باز"
+                    FoxyLanguage.AR -> "موسع"
+                    FoxyLanguage.EN -> "Expanded"
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (!previewExpanded) neu.accent else Color.Transparent)
+                        .clickable { previewExpanded = false }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = collapsedLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = fonts.headingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                        ),
+                        color = if (!previewExpanded) Color.White else neu.textSecondary,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (previewExpanded) neu.accent else Color.Transparent)
+                        .clickable { previewExpanded = true }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = expandedLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = fonts.headingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                        ),
+                        color = if (previewExpanded) Color.White else neu.textSecondary,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Interactive Island Stage
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            contentAlignment = when (settingsStore.dynamicIslandPosition) {
+                SettingsStore.DynamicIslandPosition.TOP_START -> Alignment.CenterStart
+                SettingsStore.DynamicIslandPosition.TOP_END -> Alignment.CenterEnd
+                SettingsStore.DynamicIslandPosition.TOP_CENTER -> Alignment.Center
+            },
+        ) {
+            Box(
+                modifier = Modifier
+                    .dynamicIslandMotionEffect(
+                        enabled = settingsStore.dynamicIslandAnimation,
+                        style = settingsStore.dynamicIslandMotionStyle,
+                        isConnected = true,
+                        isExpanded = previewExpanded,
+                        trafficRateBytesPerSec = 524_288L,
+                        accentColor = statusColors.connected,
+                        cornerRadius = cornerDp,
+                    )
+                    .clip(previewShape)
+                    .background(pillBrush)
+                    .border(
+                        width = 1.2.dp,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                statusColors.connected.copy(alpha = 0.62f),
+                                statusColors.connected.copy(alpha = 0.18f),
+                            ),
+                        ),
+                        shape = previewShape,
+                    )
+                    .clickable { previewExpanded = !previewExpanded },
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedContent(
+                    targetState = previewExpanded,
+                    transitionSpec = {
+                        (fadeIn(tween(180)) + scaleIn(initialScale = 0.90f))
+                            .togetherWith(fadeOut(tween(130)) + scaleOut(targetScale = 0.90f))
+                            .using(SizeTransform(clip = true) { _, _ -> spring(dampingRatio = 0.78f, stiffness = 320f) })
+                    },
+                    label = "preview-island-morph",
+                ) { isExp ->
+                    if (!isExp) {
+                        Row(
+                            modifier = Modifier
+                                .padding(
+                                    horizontal = (14.dp * scaleFactor).coerceIn(10.dp, 20.dp),
+                                    vertical = (8.dp * scaleFactor).coerceIn(6.dp, 13.dp),
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (settingsStore.dynamicIslandShowTowerWave) {
+                                AnimatedSignalTowerWave(
+                                    active = settingsStore.dynamicIslandAnimation,
+                                    color = statusColors.connected,
+                                    waveStyle = settingsStore.dynamicIslandWaveStyle,
+                                    speedMultiplier = settingsStore.waveSpeedMultiplier,
+                                    amplitudeScale = settingsStore.waveAmplitudeScale,
+                                    glowEnabled = settingsStore.waveGlowEnabled,
+                                    colorMode = settingsStore.waveColorMode,
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColors.connected),
+                                )
+                            }
+                            Spacer(Modifier.width(7.dp))
+                            if (settingsStore.dynamicIslandShowFlag) {
+                                Text("🇩🇪", fontSize = 13.sp)
+                                Spacer(Modifier.width(5.dp))
+                            }
+                            if (settingsStore.dynamicIslandShowServerName && !settingsStore.dynamicIslandCompactTelemetry) {
+                                Text(
+                                    text = s.language.localizeCountryName("Germany", "DE"),
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontFamily = fonts.headingFont,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                    color = contentColor,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            if (settingsStore.dynamicIslandShowTimer) {
+                                Text(
+                                    text = s.language.formatDurationLocalized(145L, alwaysShowHours = false),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = fonts.monoFont,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                    color = contentColor,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            if (settingsStore.dynamicIslandShowSpeed) {
+                                Text(
+                                    text = "↓2.4 MB/s",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = fonts.monoFont,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                    color = statusColors.connected,
+                                )
+                            }
+                            if (settingsStore.dynamicIslandShowProtocolBadge && !settingsStore.dynamicIslandCompactTelemetry) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = activeProtocolBadge,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = fonts.monoFont,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                    ),
+                                    color = neu.accent,
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (settingsStore.dynamicIslandShowTowerWave) {
+                                        AnimatedSignalTowerWave(
+                                            active = settingsStore.dynamicIslandAnimation,
+                                            color = statusColors.connected,
+                                            waveStyle = settingsStore.dynamicIslandWaveStyle,
+                                            speedMultiplier = settingsStore.waveSpeedMultiplier,
+                                            amplitudeScale = settingsStore.waveAmplitudeScale,
+                                            glowEnabled = settingsStore.waveGlowEnabled,
+                                            colorMode = settingsStore.waveColorMode,
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    if (settingsStore.dynamicIslandShowFlag) {
+                                        Text("🇩🇪", fontSize = 18.sp)
+                                        Spacer(Modifier.width(6.dp))
+                                    }
+                                    Column {
+                                        Text(
+                                            text = s.language.localizeCountryName("Germany", "DE"),
+                                            style = MaterialTheme.typography.labelLarge.copy(
+                                                fontFamily = fonts.headingFont,
+                                                fontWeight = FontWeight.Bold,
+                                            ),
+                                            color = contentColor,
+                                        )
+                                        Text(
+                                            text = "${s.islandActiveEncrypted} • $activeProtocolBadge :443",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont),
+                                            color = statusColors.connected,
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Filled.KeyboardArrowUp,
+                                    contentDescription = null,
+                                    tint = contentColor.copy(alpha = 0.75f),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                            if (settingsStore.dynamicIslandShowQuickApps) {
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf(
+                                        "com.google.android.youtube" to "YouTube",
+                                        "org.telegram.messenger" to "Telegram",
+                                        "com.android.chrome" to "Chrome",
+                                    ).forEach { (pkg, lbl) ->
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(contentColor.copy(alpha = 0.13f))
+                                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            QuickAppIconBadge(packageName = pkg, iconBitmap = null, size = 14.dp)
+                                            Spacer(Modifier.width(5.dp))
+                                            Text(
+                                                text = lbl,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = fonts.bodyFont,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                ),
+                                                color = contentColor,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Full Dynamic Island Customization Studio Modal (accessible from Dynamic Island & Settings).
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -1288,8 +1725,14 @@ fun DynamicIslandCustomizationModal(
     val fonts = currentFoxyFonts
 
     var scalePercent by remember { mutableFloatStateOf(settingsStore.dynamicIslandScalePercent.toFloat()) }
+    var bgAlphaPercent by remember { mutableFloatStateOf(settingsStore.dynamicIslandBgAlphaPercent.toFloat()) }
+    var autoCollapseSec by remember { mutableStateOf(settingsStore.dynamicIslandAutoCollapseSec) }
     var motionStyle by remember { mutableStateOf(settingsStore.dynamicIslandMotionStyle) }
     var waveStyle by remember { mutableStateOf(settingsStore.dynamicIslandWaveStyle) }
+    var waveSpeed by remember { mutableFloatStateOf(settingsStore.waveSpeedMultiplier) }
+    var waveAmplitude by remember { mutableFloatStateOf(settingsStore.waveAmplitudeScale) }
+    var waveGlow by remember { mutableStateOf(settingsStore.waveGlowEnabled) }
+    var waveColorMode by remember { mutableStateOf(settingsStore.waveColorMode) }
     var draggable by remember { mutableStateOf(settingsStore.dynamicIslandDraggable) }
 
     var showQuickApps by remember { mutableStateOf(settingsStore.dynamicIslandShowQuickApps) }
@@ -1301,6 +1744,9 @@ fun DynamicIslandCustomizationModal(
     var showServerName by remember { mutableStateOf(settingsStore.dynamicIslandShowServerName) }
     var showSessionData by remember { mutableStateOf(settingsStore.dynamicIslandShowSessionData) }
     var showIpBadge by remember { mutableStateOf(settingsStore.dynamicIslandShowIpBadge) }
+    var showProtocolBadge by remember { mutableStateOf(settingsStore.dynamicIslandShowProtocolBadge) }
+    var compactTelemetry by remember { mutableStateOf(settingsStore.dynamicIslandCompactTelemetry) }
+    var hapticEnabled by remember { mutableStateOf(settingsStore.dynamicIslandHapticEnabled) }
     var showAnim by remember { mutableStateOf(settingsStore.dynamicIslandAnimation) }
     var pinnedApps by remember { mutableStateOf(settingsStore.dynamicIslandPinnedApps) }
     var showAppPicker by remember { mutableStateOf(false) }
@@ -1342,6 +1788,9 @@ fun DynamicIslandCustomizationModal(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
+                // Live Interactive Dynamic Island Preview at top of modal!
+                DynamicIslandLivePreviewCard(settingsStore = settingsStore)
+                Spacer(Modifier.height(14.dp))
                 // 1. Linear Manual Scale Slider (0% - 100%)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1624,7 +2073,197 @@ fun DynamicIslandCustomizationModal(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+
+                    // Wave Color Palette Selector
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "پالت رنگ امواج"
+                            FoxyLanguage.AR -> "لوحة ألوان الأمواج"
+                            FoxyLanguage.EN -> "Wave Color Palette"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = fonts.headingFont,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = neu.textSecondary,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        com.vauth.foxyvpn.data.WaveColorMode.entries.forEach { mode ->
+                            val selected = waveColorMode == mode
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                    .clickable {
+                                        waveColorMode = mode
+                                        settingsStore.waveColorMode = mode
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                Text(
+                                    text = mode.localizedLabel(s.language),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = fonts.headingFont,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                    color = if (selected) Color.White else neu.textPrimary,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    // Wave Speed & Amplitude Sliders
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = when (s.language) {
+                                FoxyLanguage.FA -> "سرعت حرکت امواج"
+                                FoxyLanguage.AR -> "سرعة حركة الأمواج"
+                                FoxyLanguage.EN -> "Wave Animation Speed"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = neu.textPrimary,
+                        )
+                        Text(
+                            text = "${(waveSpeed * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                            color = neu.accent,
+                        )
+                    }
+                    Slider(
+                        value = waveSpeed,
+                        onValueChange = {
+                            waveSpeed = it
+                            settingsStore.waveSpeedMultiplier = it
+                        },
+                        valueRange = 0.4f..2.5f,
+                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = when (s.language) {
+                                FoxyLanguage.FA -> "دامنه و بلندی امواج"
+                                FoxyLanguage.AR -> "سعة وارتفاع الأمواج"
+                                FoxyLanguage.EN -> "Wave Amplitude & Height"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = neu.textPrimary,
+                        )
+                        Text(
+                            text = "${(waveAmplitude * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                            color = neu.accent,
+                        )
+                    }
+                    Slider(
+                        value = waveAmplitude,
+                        onValueChange = {
+                            waveAmplitude = it
+                            settingsStore.waveAmplitudeScale = it
+                        },
+                        valueRange = 0.5f..1.8f,
+                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                    )
+
+                    IslandModalSwitchRow(
+                        title = when (s.language) {
+                            FoxyLanguage.FA -> "هاله نورانی امواج (Wave Glow)"
+                            FoxyLanguage.AR -> "توهج الأمواج المضيء"
+                            FoxyLanguage.EN -> "Luminous Wave Halo Glow"
+                        },
+                        checked = waveGlow,
+                        onCheckedChange = {
+                            waveGlow = it
+                            settingsStore.waveGlowEnabled = it
+                        },
+                    )
+                    Spacer(Modifier.height(8.dp))
                 }
+
+                // Island Background Opacity & Auto-Collapse
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "غلظت پس‌زمینه داینامیک آیلند"
+                            FoxyLanguage.AR -> "شفافية خلفية الجزيرة التفاعلية"
+                            FoxyLanguage.EN -> "Island Background Opacity"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = s.language.formatPercentLocalized(bgAlphaPercent.roundToInt()),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = bgAlphaPercent,
+                    onValueChange = {
+                        bgAlphaPercent = it
+                        settingsStore.dynamicIslandBgAlphaPercent = it.roundToInt()
+                    },
+                    valueRange = 55f..100f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                Text(
+                    text = when (s.language) {
+                        FoxyLanguage.FA -> "بسته شدن خودکار کارت بازشده"
+                        FoxyLanguage.AR -> "الإغلاق التلقائي للبطاقة الموسعة"
+                        FoxyLanguage.EN -> "Auto-Collapse Expanded Sheet"
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = neu.textSecondary,
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0, 5, 10, 15, 30).forEach { sec ->
+                        val selected = autoCollapseSec == sec
+                        val lbl = if (sec == 0) {
+                            when (s.language) {
+                                FoxyLanguage.FA -> "دستی"
+                                FoxyLanguage.AR -> "يدوي"
+                                FoxyLanguage.EN -> "Manual"
+                            }
+                        } else {
+                            "${s.language.localizeNumber(sec)}s"
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                .clickable {
+                                    autoCollapseSec = sec
+                                    settingsStore.dynamicIslandAutoCollapseSec = sec
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                text = lbl,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (selected) Color.White else neu.textPrimary,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
                 IslandModalSwitchRow(
                     title = s.islandShowTimerTitle,
                     checked = showTimer,
@@ -1679,6 +2318,42 @@ fun DynamicIslandCustomizationModal(
                     onCheckedChange = {
                         showIpBadge = it
                         settingsStore.dynamicIslandShowIpBadge = it
+                    },
+                )
+                IslandModalSwitchRow(
+                    title = when (s.language) {
+                        FoxyLanguage.FA -> "نمایش نشان پروتکل فعال (H2/H3/TLS)"
+                        FoxyLanguage.AR -> "إظهار شارة البروتوكول النشط"
+                        FoxyLanguage.EN -> "Show Active Protocol Badge (H2/H3/TLS)"
+                    },
+                    checked = showProtocolBadge,
+                    onCheckedChange = {
+                        showProtocolBadge = it
+                        settingsStore.dynamicIslandShowProtocolBadge = it
+                    },
+                )
+                IslandModalSwitchRow(
+                    title = when (s.language) {
+                        FoxyLanguage.FA -> "حالت فشرده کپسول بسته (Minimal Pill)"
+                        FoxyLanguage.AR -> "الوضع المضغوط للكبسولة"
+                        FoxyLanguage.EN -> "Compact Minimal Collapsed Pill"
+                    },
+                    checked = compactTelemetry,
+                    onCheckedChange = {
+                        compactTelemetry = it
+                        settingsStore.dynamicIslandCompactTelemetry = it
+                    },
+                )
+                IslandModalSwitchRow(
+                    title = when (s.language) {
+                        FoxyLanguage.FA -> "لرزش لمسی هنگام باز و بسته شدن (Haptic)"
+                        FoxyLanguage.AR -> "اهتزاز لمسي عند الفتح والإغلاق"
+                        FoxyLanguage.EN -> "Haptic Feedback on Expand/Collapse"
+                    },
+                    checked = hapticEnabled,
+                    onCheckedChange = {
+                        hapticEnabled = it
+                        settingsStore.dynamicIslandHapticEnabled = it
                     },
                 )
                 IslandModalSwitchRow(

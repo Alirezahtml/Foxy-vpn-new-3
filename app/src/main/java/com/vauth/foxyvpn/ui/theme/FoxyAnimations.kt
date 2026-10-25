@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import com.vauth.foxyvpn.data.DynamicIslandLedStyle
 import com.vauth.foxyvpn.data.DynamicIslandMotionStyle
 import com.vauth.foxyvpn.data.HeroWaveAnimationStyle
+import com.vauth.foxyvpn.data.WaveColorMode
 import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.runtime.mutableFloatStateOf
 import kotlinx.coroutines.delay
@@ -633,15 +634,30 @@ fun NeumorphicRadarPulse(
     isConnecting: Boolean = false,
     size: Dp = 320.dp,
     waveStyle: HeroWaveAnimationStyle = HeroWaveAnimationStyle.HARMONIC_ORBIT,
+    speedMultiplier: Float = 1.0f,
+    amplitudeScale: Float = 1.0f,
+    glowEnabled: Boolean = true,
+    colorMode: WaveColorMode = WaveColorMode.AUTO_STATUS,
     modifier: Modifier = Modifier,
     centerContent: @Composable () -> Unit = {},
 ) {
+    val effectiveColor = if (colorMode == WaveColorMode.AUTO_STATUS || colorMode.colorHex == 0L) {
+        color
+    } else {
+        Color(colorMode.colorHex)
+    }
+    val safeSpeed = speedMultiplier.coerceIn(0.4f, 2.5f)
+    val safeAmp = amplitudeScale.coerceIn(0.5f, 1.8f)
+
     val infinite = rememberInfiniteTransition(label = "harmonic-wave-2026")
     val wavePhase by infinite.animateFloat(
         initialValue = 0f,
         targetValue = (2.0 * PI).toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(if (isConnecting) 1400 else 3000, easing = LinearEasing),
+            animation = tween(
+                durationMillis = ((if (isConnecting) 1400 else 3000) / safeSpeed).toInt().coerceIn(450, 7500),
+                easing = LinearEasing,
+            ),
             repeatMode = RepeatMode.Restart,
         ),
         label = "wave-phase",
@@ -650,7 +666,10 @@ fun NeumorphicRadarPulse(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(if (isConnecting) 1250 else 2500, easing = LinearEasing),
+            animation = tween(
+                durationMillis = ((if (isConnecting) 1250 else 2500) / safeSpeed).toInt().coerceIn(450, 6500),
+                easing = LinearEasing,
+            ),
             repeatMode = RepeatMode.Restart,
         ),
         label = "ripple-progress",
@@ -675,24 +694,26 @@ fun NeumorphicRadarPulse(
             if (maxRadius <= 4f || !maxRadius.isFinite()) return@Canvas
 
             // Ambient soft radial aura glow spanning almost full screen width
-            val auraAlpha = when {
-                isActive -> 0.28f
-                isConnecting -> 0.24f
-                else -> 0.12f
-            }
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        color.copy(alpha = auraAlpha),
-                        color.copy(alpha = auraAlpha * 0.45f),
-                        Color.Transparent,
+            if (glowEnabled) {
+                val auraAlpha = when {
+                    isActive -> 0.28f
+                    isConnecting -> 0.24f
+                    else -> 0.12f
+                }
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            effectiveColor.copy(alpha = auraAlpha),
+                            effectiveColor.copy(alpha = auraAlpha * 0.45f),
+                            Color.Transparent,
+                        ),
+                        center = center,
+                        radius = maxRadius * breathScale,
                     ),
-                    center = center,
                     radius = maxRadius * breathScale,
-                ),
-                radius = maxRadius * breathScale,
-                center = center,
-            )
+                    center = center,
+                )
+            }
 
             when (waveStyle) {
                 HeroWaveAnimationStyle.HARMONIC_ORBIT -> {
@@ -707,7 +728,7 @@ fun NeumorphicRadarPulse(
                         val wavePath = Path()
                         val steps = 88
                         val lobeCount = if (layer % 2 == 0) 6 else 8
-                        val amplitude = maxRadius * (if (isActive || isConnecting) 0.038f else 0.018f) * (1f + layer * 0.20f)
+                        val amplitude = maxRadius * (if (isActive || isConnecting) 0.038f else 0.018f) * (1f + layer * 0.20f) * safeAmp
                         val dir = if (layer % 2 == 0) 1f else -1f
 
                         for (i in 0..steps) {
@@ -723,7 +744,7 @@ fun NeumorphicRadarPulse(
 
                         drawPath(
                             path = wavePath,
-                            color = color.copy(alpha = ringAlpha),
+                            color = effectiveColor.copy(alpha = ringAlpha),
                             style = Stroke(
                                 width = (2.8f - layer * 0.36f).coerceAtLeast(1.1f).dp.toPx(),
                                 cap = StrokeCap.Round,
@@ -735,10 +756,10 @@ fun NeumorphicRadarPulse(
                     val ringCount = 5
                     for (ring in 0 until ringCount) {
                         val p = (rippleProgress + ring * 0.20f) % 1f
-                        val r = maxRadius * (0.26f + 0.72f * p)
+                        val r = maxRadius * (0.26f + 0.72f * p * safeAmp.coerceIn(0.75f, 1.15f))
                         val alpha = (1f - p) * (if (isActive || isConnecting) 0.58f else 0.26f)
                         drawCircle(
-                            color = color.copy(alpha = alpha),
+                            color = effectiveColor.copy(alpha = alpha),
                             radius = r,
                             center = center,
                             style = Stroke(
@@ -749,14 +770,13 @@ fun NeumorphicRadarPulse(
                             ),
                         )
                     }
-                    // Radar sweep beam
                     val sweepDeg = (wavePhase / (2f * PI.toFloat())) * 360f
                     rotate(sweepDeg, pivot = center) {
                         drawArc(
                             brush = Brush.sweepGradient(
                                 0f to Color.Transparent,
-                                0.75f to color.copy(alpha = 0.02f),
-                                1f to color.copy(alpha = if (isActive || isConnecting) 0.35f else 0.16f),
+                                0.75f to effectiveColor.copy(alpha = 0.02f),
+                                1f to effectiveColor.copy(alpha = if (isActive || isConnecting) 0.35f else 0.16f),
                                 center = center,
                             ),
                             startAngle = 0f,
@@ -776,14 +796,14 @@ fun NeumorphicRadarPulse(
                         for (s in 0..steps) {
                             val t = s.toFloat() / steps
                             val r = maxRadius * (0.28f + 0.68f * t)
-                            val theta = armAngleOffset + t * 3.6f - wavePhase * 1.4f
+                            val theta = armAngleOffset + t * 3.6f * safeAmp - wavePhase * 1.4f
                             val x = center.x + r * cos(theta)
                             val y = center.y + r * sin(theta)
                             if (s == 0) path.moveTo(x, y) else path.lineTo(x, y)
                         }
                         drawPath(
                             path = path,
-                            color = color.copy(alpha = if (isActive || isConnecting) 0.46f else 0.22f),
+                            color = effectiveColor.copy(alpha = if (isActive || isConnecting) 0.46f else 0.22f),
                             style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
                         )
                     }
@@ -792,11 +812,11 @@ fun NeumorphicRadarPulse(
                     val rayCount = 16
                     for (ray in 0 until rayCount) {
                         val angle = (ray.toFloat() / rayCount) * (2f * PI.toFloat()) + wavePhase * 0.35f
-                        val pulse = (sin(wavePhase * 2f + ray * 0.8f) + 1f) * 0.5f
+                        val pulse = (sin(wavePhase * 2f + ray * 0.8f) + 1f) * 0.5f * safeAmp.coerceIn(0.6f, 1.3f)
                         val innerR = maxRadius * 0.32f
                         val outerR = maxRadius * (0.58f + 0.38f * pulse)
                         drawLine(
-                            color = color.copy(alpha = (0.18f + 0.36f * pulse) * (if (isActive || isConnecting) 1f else 0.55f)),
+                            color = effectiveColor.copy(alpha = ((0.18f + 0.36f * pulse) * (if (isActive || isConnecting) 1f else 0.55f)).coerceIn(0.05f, 0.95f)),
                             start = Offset(center.x + innerR * cos(angle), center.y + innerR * sin(angle)),
                             end = Offset(center.x + outerR * cos(angle), center.y + outerR * sin(angle)),
                             strokeWidth = 2.2.dp.toPx(),
@@ -807,7 +827,7 @@ fun NeumorphicRadarPulse(
                         val p = (rippleProgress + ring * 0.33f) % 1f
                         val r = maxRadius * (0.34f + 0.62f * p)
                         drawCircle(
-                            color = color.copy(alpha = sin(p * PI.toFloat()) * 0.42f),
+                            color = effectiveColor.copy(alpha = sin(p * PI.toFloat()) * 0.42f),
                             radius = r,
                             center = center,
                             style = Stroke(width = 1.6.dp.toPx()),
@@ -831,9 +851,84 @@ fun NeumorphicRadarPulse(
                         hexPath.close()
                         drawPath(
                             path = hexPath,
-                            color = color.copy(alpha = sin(p * PI.toFloat()) * (if (isActive || isConnecting) 0.55f else 0.25f)),
+                            color = effectiveColor.copy(alpha = sin(p * PI.toFloat()) * (if (isActive || isConnecting) 0.55f else 0.25f)),
                             style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round),
                         )
+                    }
+                }
+                HeroWaveAnimationStyle.QUANTUM_HELIX -> {
+                    val strands = 2
+                    val steps = 96
+                    val baseR = maxRadius * 0.68f
+                    val amp = maxRadius * 0.14f * safeAmp
+                    for (strand in 0 until strands) {
+                        val path = Path()
+                        val phaseShift = strand * PI.toFloat()
+                        for (i in 0..steps) {
+                            val theta = (i.toFloat() / steps) * (2f * PI.toFloat())
+                            val r = baseR + sin(theta * 8f + wavePhase * 2f + phaseShift) * amp
+                            val x = center.x + r * cos(theta)
+                            val y = center.y + r * sin(theta)
+                            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        path.close()
+                        drawPath(
+                            path = path,
+                            color = effectiveColor.copy(alpha = if (isActive || isConnecting) 0.58f else 0.28f),
+                            style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round),
+                        )
+                    }
+                    for (node in 0 until 16) {
+                        val theta = (node.toFloat() / 16f) * (2f * PI.toFloat())
+                        val r1 = baseR + sin(theta * 8f + wavePhase * 2f) * amp
+                        val r2 = baseR + sin(theta * 8f + wavePhase * 2f + PI.toFloat()) * amp
+                        drawLine(
+                            color = effectiveColor.copy(alpha = if (isActive || isConnecting) 0.36f else 0.18f),
+                            start = Offset(center.x + r1 * cos(theta), center.y + r1 * sin(theta)),
+                            end = Offset(center.x + r2 * cos(theta), center.y + r2 * sin(theta)),
+                            strokeWidth = 1.4.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
+                HeroWaveAnimationStyle.LIQUID_SPECTRUM -> {
+                    val barCount = 48
+                    val innerR = maxRadius * 0.44f
+                    for (i in 0 until barCount) {
+                        val theta = (i.toFloat() / barCount) * (2f * PI.toFloat())
+                        val wave = ((sin(theta * 6f + wavePhase * 2.2f) + cos(theta * 4f - wavePhase * 1.5f)) * 0.25f + 0.5f)
+                            .coerceIn(0.08f, 1f)
+                        val barLen = maxRadius * (if (isActive || isConnecting) 0.42f else 0.18f) * wave * safeAmp.coerceIn(0.6f, 1.35f)
+                        val outerR = (innerR + barLen).coerceAtMost(maxRadius * 0.96f)
+                        drawLine(
+                            color = effectiveColor.copy(alpha = (0.28f + 0.58f * wave) * (if (isActive || isConnecting) 1f else 0.55f)),
+                            start = Offset(center.x + innerR * cos(theta), center.y + innerR * sin(theta)),
+                            end = Offset(center.x + outerR * cos(theta), center.y + outerR * sin(theta)),
+                            strokeWidth = 3.2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
+                HeroWaveAnimationStyle.AURORA_CROWN -> {
+                    for (ring in 0 until 4) {
+                        val p = (rippleProgress + ring * 0.25f) % 1f
+                        val r = maxRadius * (0.36f + 0.58f * p)
+                        val rot = wavePhase * (if (ring % 2 == 0) 1f else -1.2f) * 57.2958f
+                        rotate(rot, pivot = center) {
+                            for (arcIdx in 0 until 3) {
+                                drawArc(
+                                    color = effectiveColor.copy(
+                                        alpha = sin(p * PI.toFloat()) * (if (isActive || isConnecting) 0.65f else 0.30f),
+                                    ),
+                                    startAngle = arcIdx * 120f + 12f,
+                                    sweepAngle = 78f * safeAmp.coerceIn(0.7f, 1.2f),
+                                    useCenter = false,
+                                    topLeft = Offset(center.x - r, center.y - r),
+                                    size = Size(r * 2f, r * 2f),
+                                    style = Stroke(width = (3.0f - ring * 0.4f).dp.toPx(), cap = StrokeCap.Round),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -841,22 +936,24 @@ fun NeumorphicRadarPulse(
             // Inner subtle precision ring + rotating orbital satellites
             val innerRingR = maxRadius * 0.36f * breathScale
             drawCircle(
-                color = color.copy(alpha = if (isActive || isConnecting) 0.34f else 0.16f),
+                color = effectiveColor.copy(alpha = if (isActive || isConnecting) 0.34f else 0.16f),
                 radius = innerRingR,
                 center = center,
                 style = Stroke(width = 1.5.dp.toPx()),
             )
 
-            for (orb in 0 until 4) {
-                val orbAngle = wavePhase * (if (orb % 2 == 0) 1f else -0.8f) + (orb * 2f * PI.toFloat() / 4f)
-                val orbRadius = maxRadius * (0.48f + orb * 0.13f)
-                val ox = center.x + orbRadius * cos(orbAngle)
-                val oy = center.y + orbRadius * sin(orbAngle)
-                drawCircle(
-                    color = color.copy(alpha = if (isActive || isConnecting) 0.72f else 0.32f),
-                    radius = 3.5.dp.toPx(),
-                    center = Offset(ox, oy),
-                )
+            if (glowEnabled) {
+                for (orb in 0 until 4) {
+                    val orbAngle = wavePhase * (if (orb % 2 == 0) 1f else -0.8f) + (orb * 2f * PI.toFloat() / 4f)
+                    val orbRadius = maxRadius * (0.48f + orb * 0.13f)
+                    val ox = center.x + orbRadius * cos(orbAngle)
+                    val oy = center.y + orbRadius * sin(orbAngle)
+                    drawCircle(
+                        color = effectiveColor.copy(alpha = if (isActive || isConnecting) 0.72f else 0.32f),
+                        radius = 3.5.dp.toPx(),
+                        center = Offset(ox, oy),
+                    )
+                }
             }
 
             if (isConnecting) {
@@ -865,8 +962,8 @@ fun NeumorphicRadarPulse(
                     drawArc(
                         brush = Brush.sweepGradient(
                             0f to Color.Transparent,
-                            0.60f to color.copy(alpha = 0.08f),
-                            1f to color.copy(alpha = 0.58f),
+                            0.60f to effectiveColor.copy(alpha = 0.08f),
+                            1f to effectiveColor.copy(alpha = 0.58f),
                             center = center,
                         ),
                         startAngle = 0f,
@@ -1325,14 +1422,29 @@ fun AnimatedSignalTowerWave(
     active: Boolean,
     color: Color,
     waveStyle: com.vauth.foxyvpn.data.DynamicIslandWaveStyle = com.vauth.foxyvpn.data.DynamicIslandWaveStyle.SIGNAL_TOWER,
+    speedMultiplier: Float = 1.0f,
+    amplitudeScale: Float = 1.0f,
+    glowEnabled: Boolean = true,
+    colorMode: WaveColorMode = WaveColorMode.AUTO_STATUS,
     modifier: Modifier = Modifier,
 ) {
+    val effectiveColor = if (colorMode == WaveColorMode.AUTO_STATUS || colorMode.colorHex == 0L) {
+        color
+    } else {
+        Color(colorMode.colorHex)
+    }
+    val safeSpeed = speedMultiplier.coerceIn(0.4f, 2.5f)
+    val safeAmp = amplitudeScale.coerceIn(0.5f, 1.8f)
+
     val infinite = rememberInfiniteTransition(label = "signal-tower-wave")
     val waveExpand by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (active) 1350 else 2600, easing = LinearEasing),
+            animation = tween(
+                durationMillis = ((if (active) 1350 else 2600) / safeSpeed).toInt().coerceIn(380, 6000),
+                easing = LinearEasing,
+            ),
             repeatMode = RepeatMode.Restart,
         ),
         label = "tower-wave-expand",
@@ -1341,7 +1453,10 @@ fun AnimatedSignalTowerWave(
         initialValue = 0.55f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+            animation = tween(
+                durationMillis = (550 / safeSpeed).toInt().coerceIn(220, 1500),
+                easing = FastOutSlowInEasing,
+            ),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "tower-beacon-pulse",
@@ -1357,6 +1472,14 @@ fun AnimatedSignalTowerWave(
         val cx = w / 2f
         val cy = h / 2f
 
+        if (glowEnabled && active) {
+            drawCircle(
+                color = effectiveColor.copy(alpha = 0.20f * beaconPulse),
+                radius = minOf(w, h) * 0.52f,
+                center = Offset(cx, cy),
+            )
+        }
+
         when (waveStyle) {
             com.vauth.foxyvpn.data.DynamicIslandWaveStyle.EQUALIZER_BARS -> {
                 val barCount = 5
@@ -1364,11 +1487,11 @@ fun AnimatedSignalTowerWave(
                 val gap = (w - barCount * barW) / (barCount + 1).coerceAtLeast(1)
                 for (i in 0 until barCount) {
                     val phase = (waveExpand * 2f * PI.toFloat()) + i * 0.95f
-                    val amp = if (active) (0.28f + 0.68f * ((sin(phase) + 1f) * 0.5f)) else 0.25f
+                    val amp = if (active) ((0.28f + 0.68f * ((sin(phase) + 1f) * 0.5f)) * safeAmp).coerceIn(0.2f, 0.98f) else 0.25f
                     val barH = (h * amp).coerceAtLeast(3.dp.toPx())
                     val x = gap + i * (barW + gap)
                     drawRoundRect(
-                        color = color.copy(alpha = if (active) 0.92f else 0.45f),
+                        color = effectiveColor.copy(alpha = if (active) 0.92f else 0.45f),
                         topLeft = Offset(x, (h - barH) / 2f),
                         size = Size(barW, barH),
                         cornerRadius = CornerRadius(barW / 2f, barW / 2f),
@@ -1382,20 +1505,20 @@ fun AnimatedSignalTowerWave(
                 for (i in 0..steps) {
                     val t = i.toFloat() / steps
                     val x = t * w
-                    val amp = if (active) h * 0.34f else h * 0.12f
+                    val amp = (if (active) h * 0.34f else h * 0.12f) * safeAmp.coerceIn(0.6f, 1.3f)
                     val y = cy + sin(t * 2.2f * PI.toFloat() + phaseRad) * amp
                     if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 drawPath(
                     path = path,
-                    color = color.copy(alpha = if (active) 0.95f else 0.48f),
+                    color = effectiveColor.copy(alpha = if (active) 0.95f else 0.48f),
                     style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
                 )
             }
             com.vauth.foxyvpn.data.DynamicIslandWaveStyle.RADAR_PULSE -> {
-                val maxR = minOf(w, h) * 0.46f
+                val maxR = minOf(w, h) * 0.46f * safeAmp.coerceIn(0.75f, 1.15f)
                 drawCircle(
-                    color = color.copy(alpha = if (active) beaconPulse else 0.45f),
+                    color = effectiveColor.copy(alpha = if (active) beaconPulse else 0.45f),
                     radius = 2.4.dp.toPx(),
                     center = Offset(cx, cy),
                 )
@@ -1403,7 +1526,7 @@ fun AnimatedSignalTowerWave(
                     val p = (waveExpand + i / 3f) % 1f
                     val r = 2.5.dp.toPx() + p * (maxR - 2.5.dp.toPx())
                     drawCircle(
-                        color = color.copy(alpha = (1f - p) * (if (active) 0.88f else 0.30f)),
+                        color = effectiveColor.copy(alpha = (1f - p) * (if (active) 0.88f else 0.30f)),
                         radius = r,
                         center = Offset(cx, cy),
                         style = Stroke(width = 1.4.dp.toPx()),
@@ -1411,10 +1534,10 @@ fun AnimatedSignalTowerWave(
                 }
             }
             com.vauth.foxyvpn.data.DynamicIslandWaveStyle.ORBIT_DOTS -> {
-                val rx = w * 0.38f
-                val ry = h * 0.36f
+                val rx = w * 0.38f * safeAmp.coerceIn(0.7f, 1.2f)
+                val ry = h * 0.36f * safeAmp.coerceIn(0.7f, 1.2f)
                 drawCircle(
-                    color = color.copy(alpha = if (active) 0.90f else 0.45f),
+                    color = effectiveColor.copy(alpha = if (active) 0.90f else 0.45f),
                     radius = 2.4.dp.toPx(),
                     center = Offset(cx, cy),
                 )
@@ -1423,7 +1546,7 @@ fun AnimatedSignalTowerWave(
                     val px = cx + cos(angle) * rx
                     val py = cy + sin(angle) * ry
                     drawCircle(
-                        color = color.copy(alpha = if (active) 0.92f else 0.40f),
+                        color = effectiveColor.copy(alpha = if (active) 0.92f else 0.40f),
                         radius = 2.0.dp.toPx(),
                         center = Offset(px, py),
                     )
@@ -1433,7 +1556,7 @@ fun AnimatedSignalTowerWave(
                 val path = Path()
                 val pulseShift = (waveExpand - 0.5f) * w * 0.5f
                 val midX = (cx + pulseShift).coerceIn(w * 0.25f, w * 0.75f)
-                val peak = if (active) h * 0.38f * beaconPulse else h * 0.12f
+                val peak = (if (active) h * 0.38f * beaconPulse else h * 0.12f) * safeAmp.coerceIn(0.6f, 1.25f)
                 path.moveTo(0f, cy)
                 path.lineTo(midX - 5.dp.toPx(), cy)
                 path.lineTo(midX - 2.dp.toPx(), cy - peak)
@@ -1442,13 +1565,84 @@ fun AnimatedSignalTowerWave(
                 path.lineTo(w, cy)
                 drawPath(
                     path = path,
-                    color = color.copy(alpha = if (active) 0.95f else 0.48f),
+                    color = effectiveColor.copy(alpha = if (active) 0.95f else 0.48f),
                     style = Stroke(width = 1.7.dp.toPx(), cap = StrokeCap.Round),
                 )
             }
+            com.vauth.foxyvpn.data.DynamicIslandWaveStyle.DUAL_HELIX -> {
+                val steps = 18
+                val phaseRad = waveExpand * 2f * PI.toFloat()
+                val amp = (if (active) h * 0.32f else h * 0.12f) * safeAmp.coerceIn(0.6f, 1.25f)
+                val path1 = Path()
+                val path2 = Path()
+                for (i in 0..steps) {
+                    val t = i.toFloat() / steps
+                    val x = t * w
+                    val y1 = cy + sin(t * 2f * PI.toFloat() + phaseRad) * amp
+                    val y2 = cy + sin(t * 2f * PI.toFloat() + phaseRad + PI.toFloat()) * amp
+                    if (i == 0) {
+                        path1.moveTo(x, y1)
+                        path2.moveTo(x, y2)
+                    } else {
+                        path1.lineTo(x, y1)
+                        path2.lineTo(x, y2)
+                    }
+                }
+                drawPath(path1, effectiveColor.copy(alpha = if (active) 0.95f else 0.45f), style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(path2, effectiveColor.copy(alpha = if (active) 0.55f else 0.25f), style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round))
+            }
+            com.vauth.foxyvpn.data.DynamicIslandWaveStyle.CYBER_SPECTRUM -> {
+                val barCount = 7
+                val barW = 2.0.dp.toPx()
+                val gap = (w - barCount * barW) / (barCount + 1).coerceAtLeast(1)
+                for (i in 0 until barCount) {
+                    val centerWeight = 1f - abs(i - 3) * 0.18f
+                    val phase = (waveExpand * 2f * PI.toFloat() * 1.5f) + i * 0.7f
+                    val rawAmp = if (active) (0.25f + 0.70f * ((sin(phase) + 1f) * 0.5f) * centerWeight * safeAmp) else 0.22f
+                    val barH = (h * rawAmp.coerceIn(0.18f, 0.96f)).coerceAtLeast(2.5.dp.toPx())
+                    val x = gap + i * (barW + gap)
+                    drawRoundRect(
+                        color = effectiveColor.copy(alpha = if (active) 0.94f else 0.42f),
+                        topLeft = Offset(x, (h - barH) / 2f),
+                        size = Size(barW, barH),
+                        cornerRadius = CornerRadius(barW / 2f, barW / 2f),
+                    )
+                }
+            }
+            com.vauth.foxyvpn.data.DynamicIslandWaveStyle.SONIC_RIPPLE -> {
+                for (i in 0 until 3) {
+                    val p = (waveExpand + i / 3f) % 1f
+                    val rx = w * (0.14f + 0.34f * p * safeAmp.coerceIn(0.75f, 1.15f))
+                    val ry = h * (0.18f + 0.30f * p * safeAmp.coerceIn(0.75f, 1.15f))
+                    drawOval(
+                        color = effectiveColor.copy(alpha = (1f - p) * (if (active) 0.90f else 0.34f)),
+                        topLeft = Offset(cx - rx, cy - ry),
+                        size = Size(rx * 2f, ry * 2f),
+                        style = Stroke(width = 1.4.dp.toPx()),
+                    )
+                }
+            }
+            com.vauth.foxyvpn.data.DynamicIslandWaveStyle.LASER_MATRIX -> {
+                val cols = 4
+                val rows = 3
+                val dotR = 1.6.dp.toPx()
+                for (c in 0 until cols) {
+                    for (r in 0 until rows) {
+                        val x = w * (0.20f + c * 0.20f)
+                        val y = h * (0.24f + r * 0.26f)
+                        val wave = (sin(waveExpand * 2f * PI.toFloat() + c * 0.9f + r * 0.6f) + 1f) * 0.5f
+                        val alpha = if (active) (0.25f + 0.72f * wave) else 0.28f
+                        drawCircle(
+                            color = effectiveColor.copy(alpha = alpha),
+                            radius = dotR * (0.8f + 0.35f * wave * safeAmp.coerceIn(0.7f, 1.2f)),
+                            center = Offset(x, y),
+                        )
+                    }
+                }
+            }
             com.vauth.foxyvpn.data.DynamicIslandWaveStyle.SIGNAL_TOWER -> {
                 val towerCy = h * 0.42f
-                val maxWaveRadius = w * 0.46f
+                val maxWaveRadius = w * 0.46f * safeAmp.coerceIn(0.75f, 1.15f)
                 val towerBottom = h * 0.94f
                 val towerBaseHalfW = w * 0.14f
                 val towerPath = Path().apply {
@@ -1463,11 +1657,11 @@ fun AnimatedSignalTowerWave(
                 }
                 drawPath(
                     path = towerPath,
-                    color = color.copy(alpha = if (active) 0.95f else 0.5f),
+                    color = effectiveColor.copy(alpha = if (active) 0.95f else 0.5f),
                     style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
                 )
                 drawCircle(
-                    color = color.copy(alpha = if (active) beaconPulse else 0.45f),
+                    color = effectiveColor.copy(alpha = if (active) beaconPulse else 0.45f),
                     radius = 2.3.dp.toPx(),
                     center = Offset(cx, towerCy),
                 )
@@ -1480,7 +1674,7 @@ fun AnimatedSignalTowerWave(
                     val arcSize = Size(r * 2f, r * 2f)
                     val stroke = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
                     drawArc(
-                        color = color.copy(alpha = alpha),
+                        color = effectiveColor.copy(alpha = alpha),
                         startAngle = -42f,
                         sweepAngle = 84f,
                         useCenter = false,
@@ -1489,7 +1683,7 @@ fun AnimatedSignalTowerWave(
                         style = stroke,
                     )
                     drawArc(
-                        color = color.copy(alpha = alpha),
+                        color = effectiveColor.copy(alpha = alpha),
                         startAngle = 138f,
                         sweepAngle = 84f,
                         useCenter = false,

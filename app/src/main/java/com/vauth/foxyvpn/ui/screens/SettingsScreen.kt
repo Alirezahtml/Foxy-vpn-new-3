@@ -107,13 +107,26 @@ import com.vauth.foxyvpn.data.TokenStore
 import com.vauth.foxyvpn.ui.theme.StyleAtmospherePosterOverlay
 import com.vauth.foxyvpn.ui.theme.formatClockTimeLocalized
 import com.vauth.foxyvpn.ui.theme.formatMinutesLocalized
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -121,12 +134,25 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.vauth.foxyvpn.data.WaveColorMode
+import com.vauth.foxyvpn.ui.components.DynamicIslandLivePreviewCard
+import com.vauth.foxyvpn.vpn.FoxyVpnService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 private const val INSTAGRAM_URL = "https://instagram.com/Aliem061"
 private const val TELEGRAM_URL = "https://t.me/aliem_061"
+
+private enum class SettingsCategory {
+    APPEARANCE_WAVES,
+    DYNAMIC_ISLAND,
+    PROTOCOL_NETWORK,
+    SPEED_AUTOMATION,
+    SMART_TOOLKIT,
+    ACCOUNTS_ABOUT,
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -143,6 +169,14 @@ fun SettingsScreen(
     val neu = currentNeumorphicColors
     val s = currentFoxyStrings
     val fonts = currentFoxyFonts
+
+    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var selectedSubPage by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = selectedCategory != null) {
+        selectedCategory = null
+        selectedSubPage = 0
+    }
 
     var exitCheckEnabled by remember { mutableStateOf(settingsStore.exitCheckEnabled) }
     var dnsProvider by remember { mutableStateOf(settingsStore.dnsProvider) }
@@ -165,6 +199,7 @@ fun SettingsScreen(
     var mtu by remember { mutableStateOf(settingsStore.mtu) }
     var tlsSplitMode by remember { mutableStateOf(settingsStore.tlsSplitMode) }
     var connectionProtocolMode by remember { mutableStateOf(settingsStore.connectionProtocolMode) }
+    val activeProtocolBadge by FoxyVpnService.activeProtocolBadge.collectAsState()
     var adBlockEnabled by remember { mutableStateOf(settingsStore.adBlockEnabled) }
     var autoSwitchAccountByQuotaEnabled by remember { mutableStateOf(settingsStore.autoSwitchAccountByQuotaEnabled) }
     var autoSwitchQuotaThresholdPercent by remember { mutableStateOf(settingsStore.autoSwitchQuotaThresholdPercent) }
@@ -172,6 +207,12 @@ fun SettingsScreen(
     val accountsRevision by TokenStore.accountsRevision.collectAsState()
     val savedAccounts = remember(accountsRevision) { tokenStore.loadAccounts() }
     val activeAccountEmail = remember(accountsRevision) { tokenStore.activeAccountEmail }
+
+    // Pro Wave Studio State
+    var waveSpeedMultiplier by remember { mutableFloatStateOf(settingsStore.waveSpeedMultiplier) }
+    var waveAmplitudeScale by remember { mutableFloatStateOf(settingsStore.waveAmplitudeScale) }
+    var waveGlowEnabled by remember { mutableStateOf(settingsStore.waveGlowEnabled) }
+    var waveColorMode by remember { mutableStateOf(settingsStore.waveColorMode) }
 
     // Dynamic Island State
     var dynamicIslandEnabled by remember { mutableStateOf(settingsStore.dynamicIslandEnabled) }
@@ -199,6 +240,11 @@ fun SettingsScreen(
     var dynamicIslandShowQuickApps by remember { mutableStateOf(settingsStore.dynamicIslandShowQuickApps) }
     var dynamicIslandLedCustomColorHex by remember { mutableStateOf(settingsStore.dynamicIslandLedCustomColorHex) }
     var dynamicIslandWaveStyle by remember { mutableStateOf(settingsStore.dynamicIslandWaveStyle) }
+    var dynamicIslandBgAlphaPercent by remember { mutableFloatStateOf(settingsStore.dynamicIslandBgAlphaPercent.toFloat()) }
+    var dynamicIslandAutoCollapseSec by remember { mutableIntStateOf(settingsStore.dynamicIslandAutoCollapseSec) }
+    var dynamicIslandCompactTelemetry by remember { mutableStateOf(settingsStore.dynamicIslandCompactTelemetry) }
+    var dynamicIslandShowProtocolBadge by remember { mutableStateOf(settingsStore.dynamicIslandShowProtocolBadge) }
+    var dynamicIslandHapticEnabled by remember { mutableStateOf(settingsStore.dynamicIslandHapticEnabled) }
 
     // Speed Booster, Smart Battery Saver & Automation State
     var unmeteredVpnModeEnabled by remember { mutableStateOf(settingsStore.unmeteredVpnModeEnabled) }
@@ -460,24 +506,250 @@ fun SettingsScreen(
         )
     }
 
+    if (showIdleTimeoutDialog) {
+        val options = listOf(5, 10, 15, 30, 60)
+        AlertDialog(
+            onDismissRequest = { showIdleTimeoutDialog = false },
+            title = { Text(s.idleTimeoutTitle, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    options.forEach { mins ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    idleTimeoutMinutes = mins
+                                    settingsStore.idleTimeoutMinutes = mins
+                                    showIdleTimeoutDialog = false
+                                }
+                                .padding(vertical = 8.dp),
+                        ) {
+                            RadioButton(
+                                selected = idleTimeoutMinutes == mins,
+                                onClick = {
+                                    idleTimeoutMinutes = mins
+                                    settingsStore.idleTimeoutMinutes = mins
+                                    showIdleTimeoutDialog = false
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(s.language.formatMinutesLocalized(mins))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIdleTimeoutDialog = false }) {
+                    Text(s.cancel)
+                }
+            },
+        )
+    }
+
+    if (showDataCapDialog) {
+        val options = listOf(250, 500, 1024, 2048, 5120)
+        AlertDialog(
+            onDismissRequest = { showDataCapDialog = false },
+            title = { Text(s.sessionDataLimitAmountTitle, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    options.forEach { mb ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    sessionDataLimitMb = mb
+                                    settingsStore.sessionDataLimitMb = mb
+                                    showDataCapDialog = false
+                                }
+                                .padding(vertical = 8.dp),
+                        ) {
+                            RadioButton(
+                                selected = sessionDataLimitMb == mb,
+                                onClick = {
+                                    sessionDataLimitMb = mb
+                                    settingsStore.sessionDataLimitMb = mb
+                                    showDataCapDialog = false
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("${s.language.localizeNumber(mb)} MB")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDataCapDialog = false }) {
+                    Text(s.cancel)
+                }
+            },
+        )
+    }
+
+    val categoryTitle: (SettingsCategory) -> String = { cat ->
+        when (cat) {
+            SettingsCategory.APPEARANCE_WAVES -> when (s.language) {
+                AppLanguage.FA -> "زبان، تم و استودیو امواج"
+                AppLanguage.AR -> "اللغة والمظهر واستوديو الموجات"
+                AppLanguage.EN -> "Language, Theme & Wave Studio"
+            }
+            SettingsCategory.DYNAMIC_ISLAND -> when (s.language) {
+                AppLanguage.FA -> "داینامیک آیلند و پیش‌نمایش زنده"
+                AppLanguage.AR -> "الجزيرة الديناميكية والمعاينة الحية"
+                AppLanguage.EN -> "Dynamic Island & Live Preview"
+            }
+            SettingsCategory.PROTOCOL_NETWORK -> when (s.language) {
+                AppLanguage.FA -> "پروتکل اتصال، DNS و شبکه"
+                AppLanguage.AR -> "بروتوكول الاتصال والشبكة"
+                AppLanguage.EN -> "Connection Protocol & Network"
+            }
+            SettingsCategory.SPEED_AUTOMATION -> when (s.language) {
+                AppLanguage.FA -> "بوستر سرعت و اتوماسیون"
+                AppLanguage.AR -> "معزز السرعة والأتمتة"
+                AppLanguage.EN -> "Speed Booster & Automation"
+            }
+            SettingsCategory.SMART_TOOLKIT -> when (s.language) {
+                AppLanguage.FA -> "جعبه ابزار هوشمند و امنیت"
+                AppLanguage.AR -> "أدوات الشبكة والأمان"
+                AppLanguage.EN -> "Smart Network & Security Toolkit"
+            }
+            SettingsCategory.ACCOUNTS_ABOUT -> when (s.language) {
+                AppLanguage.FA -> "مدیریت حساب‌ها و درباره"
+                AppLanguage.AR -> "إدارة الحسابات وحول التطبيق"
+                AppLanguage.EN -> "Accounts, Mozilla & About"
+            }
+        }
+    }
+
+    val subPageTitles: List<String> = when (selectedCategory) {
+        SettingsCategory.APPEARANCE_WAVES -> listOf(
+            when (s.language) {
+                AppLanguage.FA -> "۱. زبان، تم و سبک موج"
+                AppLanguage.AR -> "١. اللغة ونمط الموجة"
+                AppLanguage.EN -> "1. Language & Wave Style"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۲. استودیو حرفه‌ای امواج"
+                AppLanguage.AR -> "٢. استوديو الموجات الاحترافي"
+                AppLanguage.EN -> "2. Pro Wave Studio"
+            },
+        )
+        SettingsCategory.DYNAMIC_ISLAND -> listOf(
+            when (s.language) {
+                AppLanguage.FA -> "۱. پایه و ابعاد"
+                AppLanguage.AR -> "١. الأساسيات والحجم"
+                AppLanguage.EN -> "1. Core & Scale"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۲. ظاهر و انیمیشن"
+                AppLanguage.AR -> "٢. المظهر والحركة"
+                AppLanguage.EN -> "2. Style & Motion"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۳. امواج و برنامه‌ها"
+                AppLanguage.AR -> "٣. الموجات والتطبيقات"
+                AppLanguage.EN -> "3. Waves & Apps"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۴. نشانگرها و حسگر"
+                AppLanguage.AR -> "٤. المؤشرات واللمس"
+                AppLanguage.EN -> "4. Badges & Haptics"
+            },
+        )
+        SettingsCategory.PROTOCOL_NETWORK -> listOf(
+            when (s.language) {
+                AppLanguage.FA -> "۱. پروتکل و تبلیغات"
+                AppLanguage.AR -> "١. البروتوكول والإعلانات"
+                AppLanguage.EN -> "1. Protocol & AdBlock"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۲. DNS و تفکیک ترافیک"
+                AppLanguage.AR -> "٢. DNS وتقسيم النفق"
+                AppLanguage.EN -> "2. DNS & Split Tunnel"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۳. پروکسی و پیشرفته"
+                AppLanguage.AR -> "٣. الوكيل والمتقدم"
+                AppLanguage.EN -> "3. Proxy & Advanced"
+            },
+        )
+        SettingsCategory.SPEED_AUTOMATION -> listOf(
+            when (s.language) {
+                AppLanguage.FA -> "۱. بوستر سرعت و باتری"
+                AppLanguage.AR -> "١. معزز السرعة والبطارية"
+                AppLanguage.EN -> "1. Speed & Battery"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۲. زمان‌بندی و اتوماسیون"
+                AppLanguage.AR -> "٢. الجدولة والأتمتة"
+                AppLanguage.EN -> "2. Schedule & Rules"
+            },
+        )
+        SettingsCategory.SMART_TOOLKIT -> emptyList()
+        SettingsCategory.ACCOUNTS_ABOUT -> listOf(
+            when (s.language) {
+                AppLanguage.FA -> "۱. حساب‌ها و سایت موزیلا"
+                AppLanguage.AR -> "١. الحسابات وموقع موزيلا"
+                AppLanguage.EN -> "1. Accounts & Mozilla"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "۲. گزارش‌ها و ارتباط"
+                AppLanguage.AR -> "٢. السجلات والتواصل"
+                AppLanguage.EN -> "2. Logs & Social"
+            },
+        )
+        null -> emptyList()
+    }
+
     Scaffold(
         containerColor = neu.background,
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        s.settingsTitle,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontFamily = fonts.headingFont,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        color = neu.textPrimary,
-                    )
+                    Column {
+                        Text(
+                            text = selectedCategory?.let { categoryTitle(it) } ?: s.settingsTitle,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontFamily = fonts.headingFont,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            color = neu.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (selectedCategory == null) {
+                                when (s.language) {
+                                    AppLanguage.FA -> "چیدمان صفحه‌ای دسته‌بندی‌شده (بدون اسکرول)"
+                                    AppLanguage.AR -> "تصميم صفحات مقسمة بدون تمرير"
+                                    AppLanguage.EN -> "Paginated Category Hub (Zero-Scroll)"
+                                }
+                            } else {
+                                when (s.language) {
+                                    AppLanguage.FA -> "برای بازگشت به دسته‌بندی‌ها دکمه برگشت را بزنید"
+                                    AppLanguage.AR -> "اضغط رجوع للعودة إلى الفئات"
+                                    AppLanguage.EN -> "Tap back to return to Category Hub"
+                                }
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.bodyFont),
+                            color = neu.textSecondary,
+                            maxLines = 1,
+                        )
+                    }
                 },
                 navigationIcon = {
                     NeumorphicIconButton(
                         size = 42.dp,
-                        onClick = onBack,
+                        onClick = {
+                            if (selectedCategory != null) {
+                                selectedCategory = null
+                                selectedSubPage = 0
+                            } else {
+                                onBack()
+                            }
+                        },
                         modifier = Modifier.padding(start = 8.dp),
                     ) {
                         Icon(
@@ -488,6 +760,34 @@ fun SettingsScreen(
                         )
                     }
                 },
+                actions = {
+                    if (selectedCategory != null) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 12.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(neu.accent.copy(alpha = 0.14f))
+                                .clickable {
+                                    selectedCategory = null
+                                    selectedSubPage = 0
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = when (s.language) {
+                                    AppLanguage.FA -> "همه دسته‌ها"
+                                    AppLanguage.AR -> "كل الفئات"
+                                    AppLanguage.EN -> "All Categories"
+                                },
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = fonts.headingFont,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                color = neu.accent,
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = neu.background),
             )
         },
@@ -495,1527 +795,1788 @@ fun SettingsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(neu.background),
+                .background(neu.background)
+                .padding(padding),
         ) {
             StyleAtmospherePosterOverlay(modifier = Modifier.fillMaxSize())
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                Box(modifier = Modifier.widthIn(max = 600.dp)) {
-                Column {
-                    // 0. LANGUAGE (EN / FA / AR) & APPEARANCE SECTION
-                    SectionHeading(s.sectionLanguageAndTheme)
-                    NeumorphicCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .staggeredEntrance(0),
-                    ) {
-                        Column(Modifier.padding(18.dp)) {
-                            Text(
-                                s.appLanguageTitle,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = neu.textPrimary,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                s.appLanguageSubtitle,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = fonts.bodyFont),
-                                color = neu.textSecondary,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 600.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    AnimatedContent(
+                        targetState = Pair(selectedCategory, selectedSubPage),
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        modifier = Modifier.weight(1f),
+                        label = "settings_paginated_content",
+                    ) { (cat, subPage) ->
+                        if (cat == null) {
+                            // =========================================================================
+                            // PAGINATED CATEGORY HUB (2x3 NON-SCROLLING GRID)
+                            // =========================================================================
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                AppLanguage.entries.forEach { lang ->
-                                    val isSelected = languageController.language == lang
-                                    val pillShape = RoundedCornerShape(14.dp)
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .neumorphicTouchBounce()
-                                            .let { mod ->
-                                                if (isSelected) {
-                                                    mod.clip(pillShape).background(neu.accent)
-                                                } else {
-                                                    mod.neumorphicSunken(
-                                                        shape = pillShape,
-                                                        cornerRadius = 14.dp,
-                                                        depth = 3.dp,
-                                                        surfaceColor = neu.surfaceElevated,
-                                                    )
-                                                }
-                                            }
-                                            .clickable { languageController.set(lang) }
-                                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = lang.nativeName,
-                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                            color = if (isSelected) Color.White else neu.textPrimary,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(
-                                color = neu.textSecondary.copy(alpha = 0.12f),
-                                modifier = Modifier.padding(vertical = 16.dp),
-                            )
-
-                            Text(
-                                s.appThemeTitle,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = neu.textPrimary,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                val themeOptions = listOf(
-                                    ThemeMode.SYSTEM to s.themeSystem,
-                                    ThemeMode.LIGHT to s.themeLight,
-                                    ThemeMode.DARK to s.themeDark,
-                                )
-                                themeOptions.forEach { (mode, label) ->
-                                    val isSelected = themeController.mode == mode
-                                    val pillShape = RoundedCornerShape(14.dp)
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .neumorphicTouchBounce()
-                                            .let { mod ->
-                                                if (isSelected) {
-                                                    mod.clip(pillShape).background(neu.accent)
-                                                } else {
-                                                    mod.neumorphicSunken(
-                                                        shape = pillShape,
-                                                        cornerRadius = 14.dp,
-                                                        depth = 3.dp,
-                                                        surfaceColor = neu.surfaceElevated,
-                                                    )
-                                                }
-                                            }
-                                            .clickable { themeController.set(mode) }
-                                            .padding(vertical = 11.dp, horizontal = 8.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.labelMedium.copy(
-                                                fontFamily = fonts.headingFont,
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                            color = if (isSelected) Color.White else neu.textPrimary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(
-                                color = neu.textSecondary.copy(alpha = 0.12f),
-                                modifier = Modifier.padding(vertical = 16.dp),
-                            )
-
-                            // Hero Connection Wave Animation Style (5 Styles)
-                            Text(
-                                text = s.heroWaveStyleTitle,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = neu.textPrimary,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = s.heroWaveStyleSub,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = fonts.bodyFont),
-                                color = neu.textSecondary,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                HeroWaveAnimationStyle.entries.forEach { wavePreset ->
-                                    val selected = themeController.heroWaveStyle == wavePreset
-                                    Box(
-                                        modifier = Modifier
-                                            .neumorphicTouchBounce()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                if (selected) neu.accent
-                                                else neu.accent.copy(alpha = 0.12f),
-                                            )
-                                            .clickable { themeController.applyHeroWaveStyle(wavePreset) }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    ) {
-                                        Text(
-                                            text = wavePreset.localizedLabel(s.language),
-                                            style = MaterialTheme.typography.labelMedium.copy(
-                                                fontFamily = fonts.headingFont,
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                            color = if (selected) Color.White else neu.textPrimary,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 1. SMART NETWORK & SECURITY TOOLKIT (5 OPTIONS)
-                    SectionHeading(s.sectionSmartToolkit)
-                    NeumorphicCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .staggeredEntrance(1),
-                    ) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingClickableRow(
-                                title = s.toolSpeedTitle,
-                                value = s.toolSpeedSubtitle,
-                                onClick = { onOpenTools(0) },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.toolLeakTitle,
-                                value = s.toolLeakSubtitle,
-                                onClick = { onOpenTools(1) },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.toolScannerTitle,
-                                value = s.toolScannerSubtitle,
-                                onClick = { onOpenTools(2) },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.toolWatchdogTitle,
-                                value = s.toolWatchdogSubtitle,
-                                onClick = { onOpenTools(3) },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.toolMtuTitle,
-                                value = s.toolMtuSubtitle,
-                                onClick = { onOpenTools(4) },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 2. DYNAMIC ISLAND & FULL CUSTOMIZATION SECTION
-                    SectionHeading(s.sectionDynamicIsland)
-                    NeumorphicCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .staggeredEntrance(2),
-                    ) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingToggleRow(
-                                title = s.enableDynamicIslandTitle,
-                                subtitle = s.enableDynamicIslandSub,
-                                checked = dynamicIslandEnabled,
-                                onCheckedChange = {
-                                    dynamicIslandEnabled = it
-                                    settingsStore.dynamicIslandEnabled = it
-                                },
-                            )
-
-                            if (dynamicIslandEnabled) {
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                val hasOverlayPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
-                                SettingToggleRow(
-                                    title = s.overlayIslandTitle,
-                                    subtitle = if (hasOverlayPermission) s.overlayIslandSubGranted
-                                    else s.overlayIslandSubNeedsPerm,
-                                    checked = dynamicIslandOverlayEnabled && hasOverlayPermission,
-                                    onCheckedChange = { enable ->
-                                        if (enable) {
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
-                                                val intent = Intent(
-                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                    Uri.parse("package:${context.packageName}"),
-                                                )
-                                                context.startActivity(intent)
-                                            } else {
-                                                dynamicIslandOverlayEnabled = true
-                                                settingsStore.dynamicIslandOverlayEnabled = true
-                                                DynamicIslandOverlayService.start(context)
-                                            }
-                                        } else {
-                                            dynamicIslandOverlayEnabled = false
-                                            settingsStore.dynamicIslandOverlayEnabled = false
-                                            DynamicIslandOverlayService.stop(context)
-                                        }
-                                    },
-                                )
-
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                // Manual Scale Slider (0% to 100%)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = s.islandManualScaleTitle,
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontFamily = fonts.headingFont,
-                                            fontWeight = FontWeight.Medium,
-                                        ),
-                                        color = neu.textPrimary,
-                                    )
-                                    Text(
-                                        text = s.language.formatPercentLocalized(dynamicIslandScalePercent.roundToInt()),
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontFamily = fonts.monoFont,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = neu.accent,
-                                    )
-                                }
-                                Slider(
-                                    value = dynamicIslandScalePercent,
-                                    onValueChange = {
-                                        dynamicIslandScalePercent = it
-                                        settingsStore.dynamicIslandScalePercent = it.roundToInt()
-                                    },
-                                    valueRange = 0f..100f,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = neu.accent,
-                                        activeTrackColor = neu.accent,
-                                    ),
-                                )
-
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                // Quick-Launch Apps Section Toggle + Picker
-                                SettingToggleRow(
-                                    title = s.islandShowQuickAppsTitle,
-                                    subtitle = s.islandShowQuickAppsSub,
-                                    checked = dynamicIslandShowQuickApps,
-                                    onCheckedChange = {
-                                        dynamicIslandShowQuickApps = it
-                                        settingsStore.dynamicIslandShowQuickApps = it
-                                    },
-                                )
-                                if (dynamicIslandShowQuickApps) {
-                                    Spacer(Modifier.height(8.dp))
-                                    SettingClickableRow(
-                                        title = s.islandPinnedAppsTitle,
-                                        value = s.excludedAppsCount(dynamicIslandPinnedApps.size),
-                                        onClick = { showIslandPinnedAppsDialog = true },
-                                    )
-                                }
-
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingClickableRow(
-                                    title = s.islandSizeTitle,
-                                    value = dynamicIslandSize.localizedLabel(s.language),
-                                    onClick = { showIslandSizeDialog = true },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingClickableRow(
-                                    title = s.islandCornerRadiusTitle,
-                                    value = s.language.localizeNumber(dynamicIslandCornerRadius),
-                                    onClick = { showIslandCornerRadiusDialog = true },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingClickableRow(
-                                    title = s.islandPositionTitle,
-                                    value = dynamicIslandPosition.localizedLabel(s.language),
-                                    onClick = { showIslandPositionDialog = true },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingClickableRow(
-                                    title = s.islandThemeTitle,
-                                    value = dynamicIslandTheme.localizedLabel(s.language),
-                                    onClick = { showIslandThemeDialog = true },
-                                )
-
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                // Dynamic Island Motion Style
-                                Text(
-                                    text = s.islandMotionStyleTitle,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontFamily = fonts.headingFont,
-                                        fontWeight = FontWeight.Medium,
-                                    ),
-                                    color = neu.textPrimary,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    DynamicIslandMotionStyle.entries.forEach { motionPreset ->
-                                        val selected = dynamicIslandMotionStyle == motionPreset
-                                        Box(
-                                            modifier = Modifier
-                                                .neumorphicTouchBounce()
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
-                                                .clickable {
-                                                    dynamicIslandMotionStyle = motionPreset
-                                                    settingsStore.dynamicIslandMotionStyle = motionPreset
-                                                }
-                                                .padding(horizontal = 11.dp, vertical = 7.dp),
-                                        ) {
-                                            Text(
-                                                text = motionPreset.localizedLabel(s.language),
-                                                style = MaterialTheme.typography.labelSmall.copy(
-                                                    fontFamily = fonts.headingFont,
-                                                    fontWeight = FontWeight.Bold,
-                                                ),
-                                                color = if (selected) Color.White else neu.textPrimary,
-                                            )
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                // Connection Waves inside Dynamic Island + 6 Wave Styles
-                                SettingToggleRow(
-                                    title = s.islandShowTowerWaveTitle,
-                                    subtitle = s.islandShowTowerWaveSub,
-                                    checked = dynamicIslandShowTowerWave,
-                                    onCheckedChange = {
-                                        dynamicIslandShowTowerWave = it
-                                        settingsStore.dynamicIslandShowTowerWave = it
-                                    },
-                                )
-                                if (dynamicIslandShowTowerWave) {
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        text = when (s.language) {
-                                            AppLanguage.FA -> "حالت نمایش امواج اتصال در داینامیک آیلند"
-                                            AppLanguage.AR -> "نمط موجات الاتصال في الجزيرة الديناميكية"
-                                            AppLanguage.EN -> "Dynamic Island Wave Style"
+                                val hubItems = listOf(
+                                    Triple(
+                                        SettingsCategory.APPEARANCE_WAVES,
+                                        Icons.Filled.GraphicEq,
+                                        when (s.language) {
+                                            AppLanguage.FA -> "۸ موج + استودیو حرفه‌ای رنگ و سرعت"
+                                            AppLanguage.AR -> "٨ موجات + استوديو الألوان والسرعة"
+                                            AppLanguage.EN -> "8 Waves + Pro Speed & Color Studio"
                                         },
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontFamily = fonts.bodyFont,
-                                            fontWeight = FontWeight.SemiBold,
-                                        ),
-                                        color = neu.textSecondary,
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    FlowRow(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ),
+                                    Triple(
+                                        SettingsCategory.DYNAMIC_ISLAND,
+                                        Icons.Filled.ViewCarousel,
+                                        when (s.language) {
+                                            AppLanguage.FA -> "پیش‌نمایش زنده + ۱۰ موج و شخصی‌سازی"
+                                            AppLanguage.AR -> "معاينة حية + ١٠ موجات وتخصيص"
+                                            AppLanguage.EN -> "Live Preview + 10 Waves & Options"
+                                        },
+                                    ),
+                                    Triple(
+                                        SettingsCategory.PROTOCOL_NETWORK,
+                                        Icons.Filled.Bolt,
+                                        when (s.language) {
+                                            AppLanguage.FA -> "اتصال واقعی پروتکل (${activeProtocolBadge}) و DNS"
+                                            AppLanguage.AR -> "تبديل البروتوكول الحقيقي (${activeProtocolBadge})"
+                                            AppLanguage.EN -> "Real Protocol Switch (${activeProtocolBadge}) & DNS"
+                                        },
+                                    ),
+                                    Triple(
+                                        SettingsCategory.SPEED_AUTOMATION,
+                                        Icons.Filled.Speed,
+                                        when (s.language) {
+                                            AppLanguage.FA -> "بوستر سرعت، باتری و زمان‌بندی"
+                                            AppLanguage.AR -> "معزز السرعة والبطارية والجدولة"
+                                            AppLanguage.EN -> "Speed Booster, Battery & Schedule"
+                                        },
+                                    ),
+                                    Triple(
+                                        SettingsCategory.SMART_TOOLKIT,
+                                        Icons.Filled.Security,
+                                        when (s.language) {
+                                            AppLanguage.FA -> "تست سرعت، نشت، پینگ و واچ‌داگ"
+                                            AppLanguage.AR -> "اختبار السرعة والتسرب والبينج"
+                                            AppLanguage.EN -> "Speed Test, Leak Check & Scanner"
+                                        },
+                                    ),
+                                    Triple(
+                                        SettingsCategory.ACCOUNTS_ABOUT,
+                                        Icons.Filled.AccountCircle,
+                                        when (s.language) {
+                                            AppLanguage.FA -> "چند اکانت (${s.language.localizeNumber(savedAccounts.size)}) و سایت موزیلا"
+                                            AppLanguage.AR -> "حسابات متعددة (${s.language.localizeNumber(savedAccounts.size)}) وموزيلا"
+                                            AppLanguage.EN -> "Multi-Account (${savedAccounts.size}) & Mozilla"
+                                        },
+                                    ),
+                                )
+
+                                hubItems.chunked(2).forEach { rowItems ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     ) {
-                                        DynamicIslandWaveStyle.entries.forEach { wavePreset ->
-                                            val selectedWave = dynamicIslandWaveStyle == wavePreset
+                                        rowItems.forEach { (category, icon, subtitle) ->
+                                            val accentColor = when (category) {
+                                                SettingsCategory.APPEARANCE_WAVES -> neu.accent
+                                                SettingsCategory.DYNAMIC_ISLAND -> Color(0xFF2E65F3)
+                                                SettingsCategory.PROTOCOL_NETWORK -> Color(0xFF18C964)
+                                                SettingsCategory.SPEED_AUTOMATION -> Color(0xFFFF8A3D)
+                                                SettingsCategory.SMART_TOOLKIT -> Color(0xFF8B5CF6)
+                                                SettingsCategory.ACCOUNTS_ABOUT -> Color(0xFF00B8D9)
+                                            }
+                                            NeumorphicCard(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxSize()
+                                                    .neumorphicTouchBounce(),
+                                                cornerRadius = 22.dp,
+                                                onClick = {
+                                                    selectedCategory = category
+                                                    selectedSubPage = 0
+                                                },
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .padding(14.dp),
+                                                    verticalArrangement = Arrangement.SpaceBetween,
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(42.dp)
+                                                                .clip(RoundedCornerShape(14.dp))
+                                                                .background(accentColor.copy(alpha = 0.16f))
+                                                                .border(
+                                                                    width = 1.dp,
+                                                                    color = accentColor.copy(alpha = 0.38f),
+                                                                    shape = RoundedCornerShape(14.dp),
+                                                                ),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = icon,
+                                                                contentDescription = null,
+                                                                tint = accentColor,
+                                                                modifier = Modifier.size(22.dp),
+                                                            )
+                                                        }
+                                                        Icon(
+                                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                                            contentDescription = null,
+                                                            tint = neu.textSecondary,
+                                                            modifier = Modifier.size(18.dp),
+                                                        )
+                                                    }
+                                                    Column {
+                                                        Text(
+                                                            text = categoryTitle(category),
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontFamily = fonts.headingFont,
+                                                                fontWeight = FontWeight.Bold,
+                                                            ),
+                                                            color = neu.textPrimary,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                        Spacer(Modifier.height(4.dp))
+                                                        Text(
+                                                            text = subtitle,
+                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                fontFamily = fonts.bodyFont,
+                                                            ),
+                                                            color = neu.textSecondary,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // =========================================================================
+                            // DEDICATED NON-SCROLLING CATEGORY PAGE WITH SUB-PAGE TABS
+                            // =========================================================================
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                if (subPageTitles.size > 1) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        subPageTitles.forEachIndexed { idx, tabLabel ->
+                                            val isSelectedTab = subPage == idx
+                                            val tabShape = RoundedCornerShape(12.dp)
                                             Box(
                                                 modifier = Modifier
+                                                    .weight(1f)
                                                     .neumorphicTouchBounce()
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(if (selectedWave) neu.accent else neu.accent.copy(alpha = 0.12f))
-                                                    .clickable {
-                                                        dynamicIslandWaveStyle = wavePreset
-                                                        settingsStore.dynamicIslandWaveStyle = wavePreset
+                                                    .let { mod ->
+                                                        if (isSelectedTab) {
+                                                            mod.clip(tabShape).background(neu.accent)
+                                                        } else {
+                                                            mod.neumorphicSunken(
+                                                                shape = tabShape,
+                                                                cornerRadius = 12.dp,
+                                                                depth = 2.dp,
+                                                                surfaceColor = neu.surfaceElevated,
+                                                            )
+                                                        }
                                                     }
-                                                    .padding(horizontal = 11.dp, vertical = 7.dp),
+                                                    .clickable { selectedSubPage = idx }
+                                                    .padding(vertical = 9.dp, horizontal = 6.dp),
+                                                contentAlignment = Alignment.Center,
                                             ) {
                                                 Text(
-                                                    text = wavePreset.localizedLabel(s.language),
+                                                    text = tabLabel,
                                                     style = MaterialTheme.typography.labelSmall.copy(
                                                         fontFamily = fonts.headingFont,
                                                         fontWeight = FontWeight.Bold,
                                                     ),
-                                                    color = if (selectedWave) Color.White else neu.textPrimary,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowSpeedTitle,
-                                    subtitle = s.islandShowSpeedSub,
-                                    checked = dynamicIslandShowSpeed,
-                                    onCheckedChange = {
-                                        dynamicIslandShowSpeed = it
-                                        settingsStore.dynamicIslandShowSpeed = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowPingTitle,
-                                    subtitle = s.islandShowPingSub,
-                                    checked = dynamicIslandShowPing,
-                                    onCheckedChange = {
-                                        dynamicIslandShowPing = it
-                                        settingsStore.dynamicIslandShowPing = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowFlagTitle,
-                                    subtitle = s.islandShowFlagSub,
-                                    checked = dynamicIslandShowFlag,
-                                    onCheckedChange = {
-                                        dynamicIslandShowFlag = it
-                                        settingsStore.dynamicIslandShowFlag = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowServerNameTitle,
-                                    subtitle = s.islandShowServerNameSub,
-                                    checked = dynamicIslandShowServerName,
-                                    onCheckedChange = {
-                                        dynamicIslandShowServerName = it
-                                        settingsStore.dynamicIslandShowServerName = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowSessionDataTitle,
-                                    subtitle = s.islandShowSessionDataSub,
-                                    checked = dynamicIslandShowSessionData,
-                                    onCheckedChange = {
-                                        dynamicIslandShowSessionData = it
-                                        settingsStore.dynamicIslandShowSessionData = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowIpBadgeTitle,
-                                    subtitle = s.islandShowIpBadgeSub,
-                                    checked = dynamicIslandShowIpBadge,
-                                    onCheckedChange = {
-                                        dynamicIslandShowIpBadge = it
-                                        settingsStore.dynamicIslandShowIpBadge = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandShowTimerTitle,
-                                    subtitle = s.islandShowTimerSub,
-                                    checked = dynamicIslandShowTimer,
-                                    onCheckedChange = {
-                                        dynamicIslandShowTimer = it
-                                        settingsStore.dynamicIslandShowTimer = it
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                                SettingToggleRow(
-                                    title = s.islandDraggableTitle,
-                                    subtitle = s.islandDraggableSub,
-                                    checked = dynamicIslandDraggable,
-                                    onCheckedChange = {
-                                        dynamicIslandDraggable = it
-                                        settingsStore.dynamicIslandDraggable = it
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 2B. SPEED BOOSTER, BATTERY SAVER & SMART AUTOMATION
-                    SectionHeading(s.sectionSmartAutomation)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            // 0a. Unmetered High-Speed Tunnel Mode (Android Q+ VpnService.Builder.setMetered(false))
-                            SettingToggleRow(
-                                title = s.unmeteredSpeedBoostTitle,
-                                subtitle = s.unmeteredSpeedBoostSub,
-                                checked = unmeteredVpnModeEnabled,
-                                onCheckedChange = {
-                                    unmeteredVpnModeEnabled = it
-                                    settingsStore.unmeteredVpnModeEnabled = it
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 0b. Turbo TCP/UDP Socket Buffer (256KB / 1MB)
-                            SettingToggleRow(
-                                title = s.tcpBufferBoostTitle,
-                                subtitle = s.tcpBufferBoostSub,
-                                checked = tcpBufferBoostEnabled,
-                                onCheckedChange = {
-                                    tcpBufferBoostEnabled = it
-                                    settingsStore.tcpBufferBoostEnabled = it
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 0c. Smart Battery Saver (Eco Mode)
-                            SettingToggleRow(
-                                title = s.batterySaverModeTitle,
-                                subtitle = s.batterySaverModeSub,
-                                checked = batterySaverModeEnabled,
-                                onCheckedChange = {
-                                    batterySaverModeEnabled = it
-                                    settingsStore.batterySaverModeEnabled = it
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 0d. Unrestricted Background Battery Doze Exemption
-                            val powerManager = context.getSystemService(PowerManager::class.java)
-                            val isIgnoringBatteryOptimizations = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                runCatching { powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true }.getOrDefault(false)
-                            } else {
-                                true
-                            }
-                            SettingClickableRow(
-                                title = s.batteryExemptionTitle,
-                                value = if (isIgnoringBatteryOptimizations) s.batteryExemptionGrantedSub else s.batteryExemptionRequestSub,
-                                onClick = {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                        runCatching {
-                                            @Suppress("BatteryLife")
-                                            val intent = Intent(
-                                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                                Uri.parse("package:${context.packageName}"),
-                                            )
-                                            context.startActivity(intent)
-                                        }.onFailure {
-                                            runCatching {
-                                                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                                            }
-                                        }
-                                    }
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 1. Scheduled Auto-Connect / Auto-Disconnect
-                            SettingToggleRow(
-                                title = s.scheduleVpnTitle,
-                                subtitle = s.scheduleVpnSub,
-                                checked = scheduleEnabled,
-                                onCheckedChange = {
-                                    scheduleEnabled = it
-                                    settingsStore.scheduleEnabled = it
-                                },
-                            )
-                            if (scheduleEnabled) {
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.scheduleFromLabel,
-                                    value = s.language.formatClockTimeLocalized(scheduleStartHour, scheduleStartMinute),
-                                    onClick = {
-                                        TimePickerDialog(
-                                            context,
-                                            { _, h, m ->
-                                                scheduleStartHour = h
-                                                scheduleStartMinute = m
-                                                settingsStore.scheduleStartHour = h
-                                                settingsStore.scheduleStartMinute = m
-                                            },
-                                            scheduleStartHour,
-                                            scheduleStartMinute,
-                                            true,
-                                        ).show()
-                                    },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.scheduleToLabel,
-                                    value = s.language.formatClockTimeLocalized(scheduleEndHour, scheduleEndMinute),
-                                    onClick = {
-                                        TimePickerDialog(
-                                            context,
-                                            { _, h, m ->
-                                                scheduleEndHour = h
-                                                scheduleEndMinute = m
-                                                settingsStore.scheduleEndHour = h
-                                                settingsStore.scheduleEndMinute = m
-                                            },
-                                            scheduleEndHour,
-                                            scheduleEndMinute,
-                                            true,
-                                        ).show()
-                                    },
-                                )
-                            }
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 2. Smart Idle Auto-Disconnect (Battery & Data Saver)
-                            SettingToggleRow(
-                                title = s.idleDisconnectTitle,
-                                subtitle = s.idleDisconnectSub,
-                                checked = idleDisconnectEnabled,
-                                onCheckedChange = {
-                                    idleDisconnectEnabled = it
-                                    settingsStore.idleDisconnectEnabled = it
-                                },
-                            )
-                            if (idleDisconnectEnabled) {
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.idleTimeoutTitle,
-                                    value = s.language.formatMinutesLocalized(idleTimeoutMinutes),
-                                    onClick = { showIdleTimeoutDialog = true },
-                                )
-                            }
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 3. Session Data Limit Auto-Cutoff
-                            SettingToggleRow(
-                                title = s.sessionDataLimitTitle,
-                                subtitle = s.sessionDataLimitSub,
-                                checked = sessionDataLimitEnabled,
-                                onCheckedChange = {
-                                    sessionDataLimitEnabled = it
-                                    settingsStore.sessionDataLimitEnabled = it
-                                },
-                            )
-                            if (sessionDataLimitEnabled) {
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.sessionDataLimitAmountTitle,
-                                    value = "${s.language.localizeNumber(sessionDataLimitMb)} MB",
-                                    onClick = { showDataCapDialog = true },
-                                )
-                            }
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 4. Smart Ping Auto-Optimizer
-                            SettingToggleRow(
-                                title = s.smartPingSwitchTitle,
-                                subtitle = s.smartPingSwitchSub,
-                                checked = smartPingAutoSwitch,
-                                onCheckedChange = {
-                                    smartPingAutoSwitch = it
-                                    settingsStore.smartPingAutoSwitch = it
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 5. Auto-Connect on App Launch
-                            SettingToggleRow(
-                                title = s.autoConnectLaunchTitle,
-                                subtitle = s.autoConnectLaunchSub,
-                                checked = autoConnectOnLaunch,
-                                onCheckedChange = {
-                                    autoConnectOnLaunch = it
-                                    settingsStore.autoConnectOnLaunch = it
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // 6. Stealth Lockscreen Notification Privacy
-                            SettingToggleRow(
-                                title = s.stealthNotificationTitle,
-                                subtitle = s.stealthNotificationSub,
-                                checked = stealthNotificationEnabled,
-                                onCheckedChange = {
-                                    stealthNotificationEnabled = it
-                                    settingsStore.stealthNotificationEnabled = it
-                                },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 2C. SYSTEM PERMISSIONS & PACKAGE INSTALLER
-                    SectionHeading(s.sectionPermissions)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            val canInstallPackages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
-                            } else {
-                                true
-                            }
-                            SettingClickableRow(
-                                title = s.installPermissionTitle,
-                                value = if (canInstallPackages) s.installPermissionGrantedSub else s.installPermissionRequestSub,
-                                onClick = {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                        runCatching {
-                                            val intent = Intent(
-                                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                                Uri.parse("package:${context.packageName}"),
-                                            )
-                                            context.startActivity(intent)
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 3. CONNECTION & PROTOCOL
-                    SectionHeading(s.sectionConnection)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            // Manual Connection Protocol Selection
-                            Text(
-                                text = when (s.language) {
-                                    AppLanguage.FA -> "پروتکل اتصال تونل"
-                                    AppLanguage.AR -> "بروتوكول الاتصال"
-                                    AppLanguage.EN -> "Tunnel Connection Protocol"
-                                },
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = neu.textPrimary,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = when (s.language) {
-                                    AppLanguage.FA -> "انتخاب دستی بین پروتکل نسل سوم سریع یا پروتکل نسل دوم پایدار روی شبکه‌های محدود"
-                                    AppLanguage.AR -> "الاختيار اليدوي بين البروتوكول السريع أو البروتوكول المستقر"
-                                    AppLanguage.EN -> "Manually select HTTP/3 (QUIC/UDP) or HTTP/2 (TCP fallback) for official Mozilla relays"
-                                },
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = fonts.bodyFont),
-                                color = neu.textSecondary,
-                                lineHeight = 18.sp,
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                ConnectionProtocolMode.entries.forEach { mode ->
-                                    val isSelected = connectionProtocolMode == mode
-                                    val label = when (mode) {
-                                        ConnectionProtocolMode.AUTO -> when (s.language) {
-                                            AppLanguage.FA -> "انتخاب هوشمند پروتکل"
-                                            AppLanguage.AR -> "تلقائي ذكي"
-                                            AppLanguage.EN -> "Auto (HTTP/3 + HTTP/2)"
-                                        }
-                                        ConnectionProtocolMode.HTTP2_TCP -> when (s.language) {
-                                            AppLanguage.FA -> "پروتکل نسل دوم پایدار"
-                                            AppLanguage.AR -> "الجيل الثاني المستقر"
-                                            AppLanguage.EN -> "HTTP/2 (TCP / TLS)"
-                                        }
-                                        ConnectionProtocolMode.HTTP3_QUIC -> when (s.language) {
-                                            AppLanguage.FA -> "پروتکل نسل سوم سریع"
-                                            AppLanguage.AR -> "الجيل الثالث السريع"
-                                            AppLanguage.EN -> "HTTP/3 (QUIC / UDP)"
-                                        }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .neumorphicTouchBounce()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                if (isSelected) neu.accent.copy(alpha = 0.16f)
-                                                else neu.surfaceElevated,
-                                            )
-                                            .border(
-                                                width = if (isSelected) 1.5.dp else 1.dp,
-                                                color = if (isSelected) neu.accent else neu.textSecondary.copy(alpha = 0.15f),
-                                                shape = RoundedCornerShape(12.dp),
-                                            )
-                                            .clickable {
-                                                connectionProtocolMode = mode
-                                                settingsStore.connectionProtocolMode = mode
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.labelMedium.copy(
-                                                fontFamily = fonts.bodyFont,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            ),
-                                            color = if (isSelected) neu.accent else neu.textPrimary,
-                                        )
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // Built-in Ad & Tracker Blocker Toggle
-                            SettingToggleRow(
-                                title = when (s.language) {
-                                    AppLanguage.FA -> "مسدودساز تبلیغات و ردیاب‌ها"
-                                    AppLanguage.AR -> "حظر الإعلانات والمتتبعات"
-                                    AppLanguage.EN -> "Ad & Tracker Blocker (AdBlock DNS)"
-                                },
-                                subtitle = when (s.language) {
-                                    AppLanguage.FA -> "مسدودسازی خودکار دامنه‌های تبلیغاتی، پنجره‌های مزاحم و ردیاب‌ها در سطح تونل"
-                                    AppLanguage.AR -> "حظر تلقائي لنطاقات الإعلانات والنوافذ المنبثقة عبر النفق"
-                                    AppLanguage.EN -> "Automatically block ad networks, popups, and telemetry trackers inside the VPN tunnel"
-                                },
-                                checked = adBlockEnabled,
-                                onCheckedChange = {
-                                    adBlockEnabled = it
-                                    settingsStore.adBlockEnabled = it
-                                    if (it && dnsProvider != SettingsStore.DnsProvider.ADGUARD) {
-                                        dnsProvider = SettingsStore.DnsProvider.ADGUARD
-                                        settingsStore.dnsProvider = SettingsStore.DnsProvider.ADGUARD
-                                    }
-                                },
-                            )
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            SettingToggleRow(
-                                title = s.verifyExitTitle,
-                                subtitle = s.verifyExitSub,
-                                checked = exitCheckEnabled,
-                                onCheckedChange = {
-                                    exitCheckEnabled = it
-                                    settingsStore.exitCheckEnabled = it
-                                },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.tunnelMtuTitle,
-                                value = s.mtuBytesValue(mtu),
-                                onClick = { showMtuDialog = true },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 4. DNS
-                    SectionHeading(s.sectionDns)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingClickableRow(
-                                title = s.tunnelDnsTitle,
-                                value = when (dnsProvider) {
-                                    SettingsStore.DnsProvider.CUSTOM -> customDohUrl.ifBlank { dnsProvider.localizedLabel(s.language) }
-                                    else -> dnsProvider.localizedLabel(s.language)
-                                },
-                                onClick = { showDnsProviderDialog = true },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.resolverDnsTitle,
-                                value = when (bootstrapDnsProvider) {
-                                    SettingsStore.BootstrapDnsProvider.CUSTOM -> s.language.localizeDigits(customBootstrapIp.ifBlank { bootstrapDnsProvider.localizedLabel(s.language) })
-                                    else -> bootstrapDnsProvider.localizedLabel(s.language)
-                                },
-                                onClick = { showBootstrapDnsDialog = true },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 5. LOCAL PROXY
-                    SectionHeading(s.sectionLocalProxy)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingToggleRow(
-                                title = s.proxyOnlyModeTitle,
-                                subtitle = s.proxyOnlyModeSub,
-                                checked = proxyOnlyMode,
-                                onCheckedChange = {
-                                    proxyOnlyMode = it
-                                    settingsStore.proxyOnlyMode = it
-                                },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.localBindAddressTitle,
-                                value = s.language.localizeDigits(socksBindAddress),
-                                onClick = { showSocksBindDialog = true },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.socksPortTitle,
-                                value = s.language.localizeNumber(socksPort),
-                                onClick = { showSocksPortDialog = true },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingToggleRow(
-                                title = s.enableHttpProxyTitle,
-                                subtitle = s.enableHttpProxySub,
-                                checked = httpProxyEnabled,
-                                onCheckedChange = {
-                                    httpProxyEnabled = it
-                                    settingsStore.httpProxyEnabled = it
-                                },
-                            )
-                            if (httpProxyEnabled) {
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.httpProxyPortTitle,
-                                    value = s.language.localizeNumber(httpProxyPort),
-                                    onClick = { showHttpPortDialog = true },
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 6. SPLIT TUNNELING
-                    SectionHeading(s.sectionSplitTunneling)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingClickableRow(
-                                title = s.excludedAppsTitle,
-                                value = if (excludedApps.isEmpty()) s.none else s.excludedAppsCount(excludedApps.size),
-                                onClick = { showSplitTunnelDialog = true },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 7. ADVANCED NETWORKING
-                    SectionHeading(s.sectionAdvancedNetworking)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingClickableRow(
-                                title = s.customEdgeAddressTitle,
-                                value = if (customEdgeAddress.isBlank()) s.notSet else s.language.localizeDigits(customEdgeAddress),
-                                onClick = { showEdgeAddressDialog = true },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.tlsFragmentationTitle,
-                                value = tlsSplitMode.localizedLabel(s.language),
-                                onClick = { showTlsSplitDialog = true },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingToggleRow(
-                                title = s.chainUpstreamProxyTitle,
-                                subtitle = s.chainUpstreamProxySub,
-                                checked = upstreamProxyEnabled,
-                                onCheckedChange = {
-                                    upstreamProxyEnabled = it
-                                    settingsStore.upstreamProxyEnabled = it
-                                },
-                            )
-                            if (upstreamProxyEnabled) {
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.upstreamProxyTypeTitle,
-                                    value = upstreamProxyType.localizedLabel(s.language),
-                                    onClick = { showUpstreamProxyTypeDialog = true },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.upstreamProxyAddressTitle,
-                                    value = if (upstreamProxyHost.isBlank()) s.notSet else s.language.localizeDigits("$upstreamProxyHost:$upstreamProxyPort"),
-                                    onClick = { showUpstreamProxyAddressDialog = true },
-                                )
-                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                                SettingClickableRow(
-                                    title = s.upstreamProxyCredentialsTitle,
-                                    value = if (upstreamProxyUsername.isBlank()) s.none else upstreamProxyUsername,
-                                    onClick = { showUpstreamProxyCredentialsDialog = true },
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 8. ABOUT, SOCIAL LINKS & LOGS (GitHub removed; Instagram & Telegram added)
-                    SectionHeading(s.sectionAboutAndLogs)
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingClickableRow(
-                                title = s.viewConnectionLogsTitle,
-                                value = s.viewConnectionLogsSub,
-                                onClick = onOpenLogs,
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingClickableRow(
-                                title = s.versionTitle,
-                                value = s.language.localizeDigits(BuildConfig.VERSION_NAME),
-                                onClick = {},
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingSocialLinkRow(
-                                title = s.instagramTitle,
-                                value = s.instagramSubtitle,
-                                isInstagram = true,
-                                onClick = {
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(INSTAGRAM_URL)))
-                                    }
-                                },
-                            )
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
-                            SettingSocialLinkRow(
-                                title = s.telegramTitle,
-                                value = s.telegramSubtitle,
-                                isInstagram = false,
-                                onClick = {
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_URL)))
-                                    }
-                                },
-                            )
-                        }
-                    }
-
-                    if (showIdleTimeoutDialog) {
-                        val options = listOf(5, 10, 15, 30, 60)
-                        AlertDialog(
-                            onDismissRequest = { showIdleTimeoutDialog = false },
-                            title = { Text(s.idleTimeoutTitle, fontWeight = FontWeight.Bold) },
-                            text = {
-                                Column {
-                                    options.forEach { mins ->
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    idleTimeoutMinutes = mins
-                                                    settingsStore.idleTimeoutMinutes = mins
-                                                    showIdleTimeoutDialog = false
-                                                }
-                                                .padding(vertical = 8.dp),
-                                        ) {
-                                            RadioButton(
-                                                selected = idleTimeoutMinutes == mins,
-                                                onClick = {
-                                                    idleTimeoutMinutes = mins
-                                                    settingsStore.idleTimeoutMinutes = mins
-                                                    showIdleTimeoutDialog = false
-                                                },
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(s.language.formatMinutesLocalized(mins))
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { showIdleTimeoutDialog = false }) {
-                                    Text(s.cancel)
-                                }
-                            },
-                        )
-                    }
-
-                    if (showDataCapDialog) {
-                        val options = listOf(250, 500, 1024, 2048, 5120)
-                        AlertDialog(
-                            onDismissRequest = { showDataCapDialog = false },
-                            title = { Text(s.sessionDataLimitAmountTitle, fontWeight = FontWeight.Bold) },
-                            text = {
-                                Column {
-                                    options.forEach { mb ->
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    sessionDataLimitMb = mb
-                                                    settingsStore.sessionDataLimitMb = mb
-                                                    showDataCapDialog = false
-                                                }
-                                                .padding(vertical = 8.dp),
-                                        ) {
-                                            RadioButton(
-                                                selected = sessionDataLimitMb == mb,
-                                                onClick = {
-                                                    sessionDataLimitMb = mb
-                                                    settingsStore.sessionDataLimitMb = mb
-                                                    showDataCapDialog = false
-                                                },
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("${s.language.localizeNumber(mb)} MB")
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { showDataCapDialog = false }) {
-                                    Text(s.cancel)
-                                }
-                            },
-                        )
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // 9. MULTI-ACCOUNT MANAGER & AUTO QUOTA SWITCHING
-                    SectionHeading(
-                        when (s.language) {
-                            AppLanguage.FA -> "مدیریت چند اکانت و تعویض خودکار حجم"
-                            AppLanguage.AR -> "إدارة الحسابات المتعددة والتبديل التلقائي"
-                            AppLanguage.EN -> "MULTI-ACCOUNT & AUTO QUOTA SWITCH"
-                        }
-                    )
-                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp)) {
-                            SettingToggleRow(
-                                title = when (s.language) {
-                                    AppLanguage.FA -> "تعویض خودکار اکانت بر اساس درصد مصرف"
-                                    AppLanguage.AR -> "تبديل الحساب تلقائياً حسب نسبة الاستهلاك"
-                                    AppLanguage.EN -> "Auto-Switch Account on Quota Threshold"
-                                },
-                                subtitle = when (s.language) {
-                                    AppLanguage.FA -> "در صورت رسیدن مصرف اکانت فعلی به سقف تعیین‌شده، اتصال بدون قطعی به اکانت سالم بعدی منتقل می‌شود"
-                                    AppLanguage.AR -> "عند وصول استهلاك الحساب الحالي للحد المحدد، يتم الانتقال تلقائياً لحساب آخر متاح"
-                                    AppLanguage.EN -> "Automatically switch to another saved account when active account quota exceeds threshold"
-                                },
-                                checked = autoSwitchAccountByQuotaEnabled,
-                                onCheckedChange = {
-                                    autoSwitchAccountByQuotaEnabled = it
-                                    settingsStore.autoSwitchAccountByQuotaEnabled = it
-                                },
-                            )
-
-                            if (autoSwitchAccountByQuotaEnabled) {
-                                Spacer(Modifier.height(10.dp))
-                                Text(
-                                    text = when (s.language) {
-                                        AppLanguage.FA -> "آستانه مصرف برای تعویض خودکار اکانت:"
-                                        AppLanguage.AR -> "حد الاستهلاك للتبديل التلقائي:"
-                                        AppLanguage.EN -> "Quota Usage Threshold for Auto-Switch:"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontFamily = fonts.bodyFont,
-                                        fontWeight = FontWeight.SemiBold,
-                                    ),
-                                    color = neu.textSecondary,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    listOf(75, 85, 90, 95).forEach { pct ->
-                                        val isSelected = autoSwitchQuotaThresholdPercent == pct
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .neumorphicTouchBounce()
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(
-                                                    if (isSelected) neu.accent.copy(alpha = 0.16f)
-                                                    else neu.surfaceElevated,
-                                                )
-                                                .border(
-                                                    width = if (isSelected) 1.5.dp else 1.dp,
-                                                    color = if (isSelected) neu.accent else neu.textSecondary.copy(alpha = 0.15f),
-                                                    shape = RoundedCornerShape(10.dp),
-                                                )
-                                                .clickable {
-                                                    autoSwitchQuotaThresholdPercent = pct
-                                                    settingsStore.autoSwitchQuotaThresholdPercent = pct
-                                                }
-                                                .padding(vertical = 8.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                text = s.language.formatPercentLocalized(pct),
-                                                style = MaterialTheme.typography.labelMedium.copy(
-                                                    fontFamily = fonts.monoFont,
-                                                    fontWeight = FontWeight.Bold,
-                                                ),
-                                                color = if (isSelected) neu.accent else neu.textPrimary,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 14.dp))
-
-                            Text(
-                                text = when (s.language) {
-                                    AppLanguage.FA -> "اکانت‌های ذخیره‌شده (${s.language.localizeNumber(savedAccounts.size)})"
-                                    AppLanguage.AR -> "الحسابات المحفوظة (${s.language.localizeNumber(savedAccounts.size)})"
-                                    AppLanguage.EN -> "Saved Accounts (${savedAccounts.size})"
-                                },
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                                color = neu.textPrimary,
-                            )
-                            Spacer(Modifier.height(8.dp))
-
-                            if (savedAccounts.isEmpty()) {
-                                Text(
-                                    text = activeAccountEmail ?: when (s.language) {
-                                        AppLanguage.FA -> "اکانت فعلی متصل است"
-                                        AppLanguage.AR -> "الحساب الحالي متصل"
-                                        AppLanguage.EN -> "Active session connected"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = fonts.bodyFont),
-                                    color = neu.textSecondary,
-                                )
-                            } else {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    savedAccounts.forEach { acc ->
-                                        val isCurrent = acc.email.equals(activeAccountEmail, ignoreCase = true)
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(
-                                                    if (isCurrent) neu.accent.copy(alpha = 0.12f)
-                                                    else neu.surfaceElevated.copy(alpha = 0.7f),
-                                                )
-                                                .border(
-                                                    width = 1.dp,
-                                                    color = if (isCurrent) neu.accent.copy(alpha = 0.45f)
-                                                    else neu.textSecondary.copy(alpha = 0.12f),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                )
-                                                .clickable {
-                                                    if (!isCurrent) {
-                                                        tokenStore.switchToAccount(acc.email)
-                                                    }
-                                                }
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = acc.email,
-                                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                                        fontFamily = fonts.bodyFont,
-                                                        fontWeight = FontWeight.Bold,
-                                                    ),
-                                                    color = if (isCurrent) neu.accent else neu.textPrimary,
+                                                    color = if (isSelectedTab) Color.White else neu.textPrimary,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
-                                                val quotaLabel = when {
-                                                    acc.isUnlimited -> when (s.language) {
-                                                        AppLanguage.FA -> "حجم نامحدود"
-                                                        AppLanguage.AR -> "غير محدود"
-                                                        AppLanguage.EN -> "Unlimited Quota"
-                                                    }
-                                                    acc.quotaMax != null && acc.quotaMax > 0L -> {
-                                                        val pct = s.language.formatPercentLocalized(acc.usedPercent)
-                                                        when (s.language) {
-                                                            AppLanguage.FA -> "مصرف شده: $pct"
-                                                            AppLanguage.AR -> "المستهلك: $pct"
-                                                            AppLanguage.EN -> "Used: $pct"
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Page Body Card (Non-Scrolling)
+                                Box(modifier = Modifier.weight(1f)) {
+                                    when (cat) {
+                                        // -----------------------------------------------------------------
+                                        // CATEGORY 1: APPEARANCE, LANGUAGE & PRO WAVE STUDIO
+                                        // -----------------------------------------------------------------
+                                        SettingsCategory.APPEARANCE_WAVES -> {
+                                            if (subPage == 0) {
+                                                NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                    Column(Modifier.padding(16.dp)) {
+                                                        Text(
+                                                            s.appLanguageTitle,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontFamily = fonts.headingFont,
+                                                                fontWeight = FontWeight.Bold,
+                                                            ),
+                                                            color = neu.textPrimary,
+                                                        )
+                                                        Spacer(Modifier.height(8.dp))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        ) {
+                                                            AppLanguage.entries.forEach { lang ->
+                                                                val isSelected = languageController.language == lang
+                                                                val pillShape = RoundedCornerShape(12.dp)
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .neumorphicTouchBounce()
+                                                                        .let { mod ->
+                                                                            if (isSelected) mod.clip(pillShape).background(neu.accent)
+                                                                            else mod.neumorphicSunken(pillShape, 12.dp, 2.dp, neu.surfaceElevated)
+                                                                        }
+                                                                        .clickable { languageController.set(lang) }
+                                                                        .padding(vertical = 10.dp),
+                                                                    contentAlignment = Alignment.Center,
+                                                                ) {
+                                                                    Text(
+                                                                        text = lang.nativeName,
+                                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                                        color = if (isSelected) Color.White else neu.textPrimary,
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+
+                                                        Text(
+                                                            s.appThemeTitle,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontFamily = fonts.headingFont,
+                                                                fontWeight = FontWeight.Bold,
+                                                            ),
+                                                            color = neu.textPrimary,
+                                                        )
+                                                        Spacer(Modifier.height(8.dp))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        ) {
+                                                            val themeOptions = listOf(
+                                                                ThemeMode.SYSTEM to s.themeSystem,
+                                                                ThemeMode.LIGHT to s.themeLight,
+                                                                ThemeMode.DARK to s.themeDark,
+                                                            )
+                                                            themeOptions.forEach { (mode, label) ->
+                                                                val isSelected = themeController.mode == mode
+                                                                val pillShape = RoundedCornerShape(12.dp)
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .neumorphicTouchBounce()
+                                                                        .let { mod ->
+                                                                            if (isSelected) mod.clip(pillShape).background(neu.accent)
+                                                                            else mod.neumorphicSunken(pillShape, 12.dp, 2.dp, neu.surfaceElevated)
+                                                                        }
+                                                                        .clickable { themeController.set(mode) }
+                                                                        .padding(vertical = 10.dp),
+                                                                    contentAlignment = Alignment.Center,
+                                                                ) {
+                                                                    Text(
+                                                                        text = label,
+                                                                        style = MaterialTheme.typography.labelMedium.copy(
+                                                                            fontFamily = fonts.headingFont,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                        ),
+                                                                        color = if (isSelected) Color.White else neu.textPrimary,
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+
+                                                        Text(
+                                                            text = s.heroWaveStyleTitle,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontFamily = fonts.headingFont,
+                                                                fontWeight = FontWeight.Bold,
+                                                            ),
+                                                            color = neu.textPrimary,
+                                                        )
+                                                        Spacer(Modifier.height(8.dp))
+                                                        FlowRow(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                        ) {
+                                                            HeroWaveAnimationStyle.entries.forEach { wavePreset ->
+                                                                val selected = themeController.heroWaveStyle == wavePreset
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .neumorphicTouchBounce()
+                                                                        .clip(RoundedCornerShape(10.dp))
+                                                                        .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                        .clickable { themeController.applyHeroWaveStyle(wavePreset) }
+                                                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                                ) {
+                                                                    Text(
+                                                                        text = wavePreset.localizedLabel(s.language),
+                                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                                            fontFamily = fonts.headingFont,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                        ),
+                                                                        color = if (selected) Color.White else neu.textPrimary,
+                                                                    )
+                                                                }
+                                                            }
                                                         }
                                                     }
-                                                    else -> when (s.language) {
-                                                        AppLanguage.FA -> "آماده جایگزینی سریع"
-                                                        AppLanguage.AR -> "جاهز للتبديل السريع"
-                                                        AppLanguage.EN -> "Ready for instant switch"
+                                                }
+                                            } else {
+                                                // Sub-page 1: Pro Wave Studio (Wave Color Mode, Speed, Amplitude, Glow)
+                                                NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                    Column(Modifier.padding(16.dp)) {
+                                                        Text(
+                                                            text = when (s.language) {
+                                                                AppLanguage.FA -> "تم رنگی امواج اتصال (صفحه اصلی و داینامیک)"
+                                                                AppLanguage.AR -> "نمط ألوان موجات الاتصال"
+                                                                AppLanguage.EN -> "Wave Color Palette (Hero & Dynamic Island)"
+                                                            },
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontFamily = fonts.headingFont,
+                                                                fontWeight = FontWeight.Bold,
+                                                            ),
+                                                            color = neu.textPrimary,
+                                                        )
+                                                        Spacer(Modifier.height(8.dp))
+                                                        FlowRow(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                        ) {
+                                                            WaveColorMode.entries.forEach { colorPreset ->
+                                                                val selected = waveColorMode == colorPreset
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .neumorphicTouchBounce()
+                                                                        .clip(RoundedCornerShape(10.dp))
+                                                                        .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                        .clickable {
+                                                                            waveColorMode = colorPreset
+                                                                            settingsStore.waveColorMode = colorPreset
+                                                                        }
+                                                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                                ) {
+                                                                    Text(
+                                                                        text = colorPreset.localizedLabel(s.language),
+                                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                                            fontFamily = fonts.headingFont,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                        ),
+                                                                        color = if (selected) Color.White else neu.textPrimary,
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                        ) {
+                                                            Text(
+                                                                text = when (s.language) {
+                                                                    AppLanguage.FA -> "سرعت حرکت امواج"
+                                                                    AppLanguage.AR -> "سرعة حركة الموجات"
+                                                                    AppLanguage.EN -> "Wave Animation Speed"
+                                                                },
+                                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                                color = neu.textPrimary,
+                                                            )
+                                                            Text(
+                                                                text = s.language.localizeDigits(String.format("%.1fx", waveSpeedMultiplier)),
+                                                                style = MaterialTheme.typography.labelMedium.copy(
+                                                                    fontFamily = fonts.monoFont,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                ),
+                                                                color = neu.accent,
+                                                            )
+                                                        }
+                                                        Slider(
+                                                            value = waveSpeedMultiplier,
+                                                            onValueChange = {
+                                                                waveSpeedMultiplier = it
+                                                                settingsStore.waveSpeedMultiplier = it
+                                                            },
+                                                            valueRange = 0.4f..2.5f,
+                                                            colors = SliderDefaults.colors(
+                                                                thumbColor = neu.accent,
+                                                                activeTrackColor = neu.accent,
+                                                            ),
+                                                        )
+
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                        ) {
+                                                            Text(
+                                                                text = when (s.language) {
+                                                                    AppLanguage.FA -> "دامنه و بلندی امواج"
+                                                                    AppLanguage.AR -> "سعة وارتفاع الموجات"
+                                                                    AppLanguage.EN -> "Wave Amplitude & Height"
+                                                                },
+                                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                                color = neu.textPrimary,
+                                                            )
+                                                            Text(
+                                                                text = s.language.localizeDigits(String.format("%.1fx", waveAmplitudeScale)),
+                                                                style = MaterialTheme.typography.labelMedium.copy(
+                                                                    fontFamily = fonts.monoFont,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                ),
+                                                                color = neu.accent,
+                                                            )
+                                                        }
+                                                        Slider(
+                                                            value = waveAmplitudeScale,
+                                                            onValueChange = {
+                                                                waveAmplitudeScale = it
+                                                                settingsStore.waveAmplitudeScale = it
+                                                            },
+                                                            valueRange = 0.5f..1.8f,
+                                                            colors = SliderDefaults.colors(
+                                                                thumbColor = neu.accent,
+                                                                activeTrackColor = neu.accent,
+                                                            ),
+                                                        )
+
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+
+                                                        SettingToggleRow(
+                                                            title = when (s.language) {
+                                                                AppLanguage.FA -> "هاله نوری و درخشش سه‌بعدی امواج"
+                                                                AppLanguage.AR -> "توهج ثلاثي الأبعاد للموجات"
+                                                                AppLanguage.EN -> "3D Luminous Wave Glow Halo"
+                                                            },
+                                                            subtitle = when (s.language) {
+                                                                AppLanguage.FA -> "افزودن لایه درخشش نرم در پس‌زمینه امواج رادار و داینامیک آیلند"
+                                                                AppLanguage.AR -> "إضافة طبقة توهج ناعمة خلف الموجات"
+                                                                AppLanguage.EN -> "Render soft ambient glow behind radar and Dynamic Island waves"
+                                                            },
+                                                            checked = waveGlowEnabled,
+                                                            onCheckedChange = {
+                                                                waveGlowEnabled = it
+                                                                settingsStore.waveGlowEnabled = it
+                                                            },
+                                                        )
                                                     }
                                                 }
-                                                Text(
-                                                    text = quotaLabel,
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.bodyFont),
-                                                    color = neu.textSecondary,
-                                                )
                                             }
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            ) {
-                                                if (isCurrent) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.CheckCircle,
-                                                        contentDescription = null,
-                                                        tint = neu.accent,
-                                                        modifier = Modifier.size(18.dp),
+                                        }
+
+                                        // -----------------------------------------------------------------
+                                        // CATEGORY 2: DYNAMIC ISLAND + LIVE INTERACTIVE PREVIEW
+                                        // -----------------------------------------------------------------
+                                        SettingsCategory.DYNAMIC_ISLAND -> {
+                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                // Live In-App Preview Always Visible at Top of Dynamic Island Customization!
+                                                DynamicIslandLivePreviewCard(
+                                                    settingsStore = settingsStore,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+
+                                                NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                    Column(Modifier.padding(14.dp)) {
+                                                        when (subPage) {
+                                                            0 -> {
+                                                                SettingToggleRow(
+                                                                    title = s.enableDynamicIslandTitle,
+                                                                    subtitle = s.enableDynamicIslandSub,
+                                                                    checked = dynamicIslandEnabled,
+                                                                    onCheckedChange = {
+                                                                        dynamicIslandEnabled = it
+                                                                        settingsStore.dynamicIslandEnabled = it
+                                                                    },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+
+                                                                val hasOverlayPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+                                                                SettingToggleRow(
+                                                                    title = s.overlayIslandTitle,
+                                                                    subtitle = if (hasOverlayPermission) s.overlayIslandSubGranted else s.overlayIslandSubNeedsPerm,
+                                                                    checked = dynamicIslandOverlayEnabled && hasOverlayPermission,
+                                                                    onCheckedChange = { enable ->
+                                                                        if (enable) {
+                                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+                                                                                val intent = Intent(
+                                                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                                                    Uri.parse("package:${context.packageName}"),
+                                                                                )
+                                                                                context.startActivity(intent)
+                                                                            } else {
+                                                                                dynamicIslandOverlayEnabled = true
+                                                                                settingsStore.dynamicIslandOverlayEnabled = true
+                                                                                DynamicIslandOverlayService.start(context)
+                                                                            }
+                                                                        } else {
+                                                                            dynamicIslandOverlayEnabled = false
+                                                                            settingsStore.dynamicIslandOverlayEnabled = false
+                                                                            DynamicIslandOverlayService.stop(context)
+                                                                        }
+                                                                    },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                ) {
+                                                                    Text(
+                                                                        text = s.islandManualScaleTitle,
+                                                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Text(
+                                                                        text = s.language.formatPercentLocalized(dynamicIslandScalePercent.roundToInt()),
+                                                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                        color = neu.accent,
+                                                                    )
+                                                                }
+                                                                Slider(
+                                                                    value = dynamicIslandScalePercent,
+                                                                    onValueChange = {
+                                                                        dynamicIslandScalePercent = it
+                                                                        settingsStore.dynamicIslandScalePercent = it.roundToInt()
+                                                                    },
+                                                                    valueRange = 0f..100f,
+                                                                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                )
+
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                ) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "شفافیت و غلظت پس‌زمینه کپسول"
+                                                                            AppLanguage.AR -> "شفافية خلفية الكبسولة"
+                                                                            AppLanguage.EN -> "Capsule Background Opacity"
+                                                                        },
+                                                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Text(
+                                                                        text = s.language.formatPercentLocalized(dynamicIslandBgAlphaPercent.roundToInt()),
+                                                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                        color = neu.accent,
+                                                                    )
+                                                                }
+                                                                Slider(
+                                                                    value = dynamicIslandBgAlphaPercent,
+                                                                    onValueChange = {
+                                                                        dynamicIslandBgAlphaPercent = it
+                                                                        settingsStore.dynamicIslandBgAlphaPercent = it.roundToInt()
+                                                                    },
+                                                                    valueRange = 65f..100f,
+                                                                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                )
+                                                            }
+                                                            1 -> {
+                                                                SettingClickableRow(
+                                                                    title = s.islandSizeTitle,
+                                                                    value = dynamicIslandSize.localizedLabel(s.language),
+                                                                    onClick = { showIslandSizeDialog = true },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                SettingClickableRow(
+                                                                    title = s.islandCornerRadiusTitle,
+                                                                    value = s.language.localizeNumber(dynamicIslandCornerRadius),
+                                                                    onClick = { showIslandCornerRadiusDialog = true },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                SettingClickableRow(
+                                                                    title = s.islandPositionTitle,
+                                                                    value = dynamicIslandPosition.localizedLabel(s.language),
+                                                                    onClick = { showIslandPositionDialog = true },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                SettingClickableRow(
+                                                                    title = s.islandThemeTitle,
+                                                                    value = dynamicIslandTheme.localizedLabel(s.language),
+                                                                    onClick = { showIslandThemeDialog = true },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                Text(
+                                                                    text = s.islandMotionStyleTitle,
+                                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                                    color = neu.textSecondary,
+                                                                )
+                                                                Spacer(Modifier.height(6.dp))
+                                                                FlowRow(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                                ) {
+                                                                    DynamicIslandMotionStyle.entries.forEach { motionPreset ->
+                                                                        val selected = dynamicIslandMotionStyle == motionPreset
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .neumorphicTouchBounce()
+                                                                                .clip(RoundedCornerShape(10.dp))
+                                                                                .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                                .clickable {
+                                                                                    dynamicIslandMotionStyle = motionPreset
+                                                                                    settingsStore.dynamicIslandMotionStyle = motionPreset
+                                                                                }
+                                                                                .padding(horizontal = 9.dp, vertical = 6.dp),
+                                                                        ) {
+                                                                            Text(
+                                                                                text = motionPreset.localizedLabel(s.language),
+                                                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                color = if (selected) Color.White else neu.textPrimary,
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                ) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "بسته شدن خودکار:"
+                                                                            AppLanguage.AR -> "الإغلاق التلقائي:"
+                                                                            AppLanguage.EN -> "Auto-Collapse Timer:"
+                                                                        },
+                                                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                        listOf(0, 5, 10, 15).forEach { sec ->
+                                                                            val isSel = dynamicIslandAutoCollapseSec == sec
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .clip(RoundedCornerShape(8.dp))
+                                                                                    .background(if (isSel) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                                    .clickable {
+                                                                                        dynamicIslandAutoCollapseSec = sec
+                                                                                        settingsStore.dynamicIslandAutoCollapseSec = sec
+                                                                                    }
+                                                                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                                                            ) {
+                                                                                Text(
+                                                                                    text = if (sec == 0) s.none else "${s.language.localizeNumber(sec)}s",
+                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                    color = if (isSel) Color.White else neu.textPrimary,
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            2 -> {
+                                                                SettingToggleRow(
+                                                                    title = s.islandShowTowerWaveTitle,
+                                                                    subtitle = s.islandShowTowerWaveSub,
+                                                                    checked = dynamicIslandShowTowerWave,
+                                                                    onCheckedChange = {
+                                                                        dynamicIslandShowTowerWave = it
+                                                                        settingsStore.dynamicIslandShowTowerWave = it
+                                                                    },
+                                                                )
+                                                                if (dynamicIslandShowTowerWave) {
+                                                                    Spacer(Modifier.height(6.dp))
+                                                                    FlowRow(
+                                                                        modifier = Modifier.fillMaxWidth(),
+                                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                                    ) {
+                                                                        DynamicIslandWaveStyle.entries.forEach { wavePreset ->
+                                                                            val selectedWave = dynamicIslandWaveStyle == wavePreset
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .neumorphicTouchBounce()
+                                                                                    .clip(RoundedCornerShape(10.dp))
+                                                                                    .background(if (selectedWave) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                                    .clickable {
+                                                                                        dynamicIslandWaveStyle = wavePreset
+                                                                                        settingsStore.dynamicIslandWaveStyle = wavePreset
+                                                                                    }
+                                                                                    .padding(horizontal = 9.dp, vertical = 6.dp),
+                                                                            ) {
+                                                                                Text(
+                                                                                    text = wavePreset.localizedLabel(s.language),
+                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                    color = if (selectedWave) Color.White else neu.textPrimary,
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                SettingToggleRow(
+                                                                    title = s.islandShowQuickAppsTitle,
+                                                                    subtitle = s.islandShowQuickAppsSub,
+                                                                    checked = dynamicIslandShowQuickApps,
+                                                                    onCheckedChange = {
+                                                                        dynamicIslandShowQuickApps = it
+                                                                        settingsStore.dynamicIslandShowQuickApps = it
+                                                                    },
+                                                                )
+                                                                if (dynamicIslandShowQuickApps) {
+                                                                    Spacer(Modifier.height(6.dp))
+                                                                    SettingClickableRow(
+                                                                        title = s.islandPinnedAppsTitle,
+                                                                        value = s.excludedAppsCount(dynamicIslandPinnedApps.size),
+                                                                        onClick = { showIslandPinnedAppsDialog = true },
+                                                                    )
+                                                                }
+                                                            }
+                                                            else -> {
+                                                                // Sub-page 3: Compact Telemetry Badges Grid (2-column non-scrolling switches)
+                                                                val badgeItems = listOf(
+                                                                    Triple(
+                                                                        s.islandShowSpeedTitle,
+                                                                        dynamicIslandShowSpeed,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowSpeed = v
+                                                                            settingsStore.dynamicIslandShowSpeed = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        s.islandShowPingTitle,
+                                                                        dynamicIslandShowPing,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowPing = v
+                                                                            settingsStore.dynamicIslandShowPing = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        s.islandShowFlagTitle,
+                                                                        dynamicIslandShowFlag,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowFlag = v
+                                                                            settingsStore.dynamicIslandShowFlag = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        s.islandShowServerNameTitle,
+                                                                        dynamicIslandShowServerName,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowServerName = v
+                                                                            settingsStore.dynamicIslandShowServerName = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        s.islandShowSessionDataTitle,
+                                                                        dynamicIslandShowSessionData,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowSessionData = v
+                                                                            settingsStore.dynamicIslandShowSessionData = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        s.islandShowIpBadgeTitle,
+                                                                        dynamicIslandShowIpBadge,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowIpBadge = v
+                                                                            settingsStore.dynamicIslandShowIpBadge = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        s.islandShowTimerTitle,
+                                                                        dynamicIslandShowTimer,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowTimer = v
+                                                                            settingsStore.dynamicIslandShowTimer = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "نشان پروتکل فعال"
+                                                                            AppLanguage.AR -> "شارة البروتوكول"
+                                                                            AppLanguage.EN -> "Protocol Badge"
+                                                                        },
+                                                                        dynamicIslandShowProtocolBadge,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandShowProtocolBadge = v
+                                                                            settingsStore.dynamicIslandShowProtocolBadge = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "تله‌متری فشرده"
+                                                                            AppLanguage.AR -> "وضع مضغوط"
+                                                                            AppLanguage.EN -> "Compact Mode"
+                                                                        },
+                                                                        dynamicIslandCompactTelemetry,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandCompactTelemetry = v
+                                                                            settingsStore.dynamicIslandCompactTelemetry = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "لرزش لمسی (Haptic)"
+                                                                            AppLanguage.AR -> "اهتزاز لمسي"
+                                                                            AppLanguage.EN -> "Haptic Feedback"
+                                                                        },
+                                                                        dynamicIslandHapticEnabled,
+                                                                        { v: Boolean ->
+                                                                            dynamicIslandHapticEnabled = v
+                                                                            settingsStore.dynamicIslandHapticEnabled = v
+                                                                        },
+                                                                    ),
+                                                                )
+                                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                    badgeItems.chunked(2).forEach { pair ->
+                                                                        Row(
+                                                                            modifier = Modifier.fillMaxWidth(),
+                                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        ) {
+                                                                            pair.forEach { (label, checked, onToggle) ->
+                                                                                Row(
+                                                                                    modifier = Modifier
+                                                                                        .weight(1f)
+                                                                                        .clip(RoundedCornerShape(12.dp))
+                                                                                        .background(neu.surfaceElevated.copy(alpha = 0.65f))
+                                                                                        .clickable { onToggle(!checked) }
+                                                                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                                ) {
+                                                                                    Text(
+                                                                                        text = label,
+                                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                        color = neu.textPrimary,
+                                                                                        maxLines = 1,
+                                                                                        overflow = TextOverflow.Ellipsis,
+                                                                                        modifier = Modifier.weight(1f),
+                                                                                    )
+                                                                                    Switch(
+                                                                                        checked = checked,
+                                                                                        onCheckedChange = onToggle,
+                                                                                        colors = SwitchDefaults.colors(
+                                                                                            checkedThumbColor = Color.White,
+                                                                                            checkedTrackColor = neu.accent,
+                                                                                        ),
+                                                                                    )
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -----------------------------------------------------------------
+                                        // CATEGORY 3: REAL PROTOCOL SWITCHING, DNS & NETWORK
+                                        // -----------------------------------------------------------------
+                                        SettingsCategory.PROTOCOL_NETWORK -> {
+                                            NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                Column(Modifier.padding(16.dp)) {
+                                                    when (subPage) {
+                                                        0 -> {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                            ) {
+                                                                Text(
+                                                                    text = when (s.language) {
+                                                                        AppLanguage.FA -> "پروتکل اتصال تونل (سوئیچ زنده)"
+                                                                        AppLanguage.AR -> "بروتوكول الاتصال (تبديل فوري)"
+                                                                        AppLanguage.EN -> "Tunnel Connection Protocol (Live Switch)"
+                                                                    },
+                                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                                        fontFamily = fonts.headingFont,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                    ),
+                                                                    color = neu.textPrimary,
+                                                                )
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(8.dp))
+                                                                        .background(Color(0xFF18C964).copy(alpha = 0.16f))
+                                                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                                                ) {
+                                                                    Text(
+                                                                        text = activeProtocolBadge,
+                                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                                            fontFamily = fonts.monoFont,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                        ),
+                                                                        color = Color(0xFF18C964),
+                                                                    )
+                                                                }
+                                                            }
+                                                            Spacer(Modifier.height(4.dp))
+                                                            Text(
+                                                                text = when (s.language) {
+                                                                    AppLanguage.FA -> "با انتخاب هر پروتکل، تونل فعال بلافاصله با همان پروتکل بازتنظیم و متصل می‌شود"
+                                                                    AppLanguage.AR -> "عند اختيار أي بروتوكول يتم إعادة ربط النفق فوراً بهذا البروتوكول"
+                                                                    AppLanguage.EN -> "Selecting a protocol immediately re-handshakes the active tunnel with that transport"
+                                                                },
+                                                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = fonts.bodyFont),
+                                                                color = neu.textSecondary,
+                                                            )
+                                                            Spacer(Modifier.height(10.dp))
+                                                            FlowRow(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                            ) {
+                                                                ConnectionProtocolMode.entries.forEach { mode ->
+                                                                    val isSelected = connectionProtocolMode == mode
+                                                                    val label = when (mode) {
+                                                                        ConnectionProtocolMode.AUTO -> when (s.language) {
+                                                                            AppLanguage.FA -> "هوشمند (H3 + H2)"
+                                                                            AppLanguage.AR -> "تلقائي ذكي (H3 + H2)"
+                                                                            AppLanguage.EN -> "Auto (HTTP/3 + HTTP/2)"
+                                                                        }
+                                                                        ConnectionProtocolMode.HTTP2_TCP -> when (s.language) {
+                                                                            AppLanguage.FA -> "HTTP/2 (TCP پایدار)"
+                                                                            AppLanguage.AR -> "HTTP/2 (TCP مستقر)"
+                                                                            AppLanguage.EN -> "HTTP/2 (TCP Multiplex)"
+                                                                        }
+                                                                        ConnectionProtocolMode.HTTP3_QUIC -> when (s.language) {
+                                                                            AppLanguage.FA -> "HTTP/3 (توربو QUIC)"
+                                                                            AppLanguage.AR -> "HTTP/3 (سريع QUIC)"
+                                                                            AppLanguage.EN -> "HTTP/3 (Turbo QUIC)"
+                                                                        }
+                                                                        ConnectionProtocolMode.HTTP11_TLS -> when (s.language) {
+                                                                            AppLanguage.FA -> "HTTP/1.1 + TLS ضد فیلتر"
+                                                                            AppLanguage.AR -> "HTTP/1.1 + TLS مضاد للحجب"
+                                                                            AppLanguage.EN -> "HTTP/1.1 + TLS Stealth"
+                                                                        }
+                                                                    }
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .neumorphicTouchBounce()
+                                                                            .clip(RoundedCornerShape(12.dp))
+                                                                            .background(
+                                                                                if (isSelected) neu.accent.copy(alpha = 0.16f)
+                                                                                else neu.surfaceElevated,
+                                                                            )
+                                                                            .border(
+                                                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                                                color = if (isSelected) neu.accent else neu.textSecondary.copy(alpha = 0.15f),
+                                                                                shape = RoundedCornerShape(12.dp),
+                                                                            )
+                                                                            .clickable {
+                                                                                connectionProtocolMode = mode
+                                                                                settingsStore.connectionProtocolMode = mode
+                                                                                // Immediately switch active VPN tunnel to the selected protocol!
+                                                                                FoxyVpnService.switchProtocol(context, mode)
+                                                                            }
+                                                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                                    ) {
+                                                                        Text(
+                                                                            text = label,
+                                                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                                                fontFamily = fonts.bodyFont,
+                                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                                            ),
+                                                                            color = if (isSelected) neu.accent else neu.textPrimary,
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+
+                                                            SettingToggleRow(
+                                                                title = when (s.language) {
+                                                                    AppLanguage.FA -> "مسدودساز تبلیغات و ردیاب‌ها"
+                                                                    AppLanguage.AR -> "حظر الإعلانات والمتتبعات"
+                                                                    AppLanguage.EN -> "Ad & Tracker Blocker (AdBlock DNS)"
+                                                                },
+                                                                subtitle = when (s.language) {
+                                                                    AppLanguage.FA -> "مسدودسازی خودکار دامنه‌های تبلیغاتی و ردیاب‌ها در سطح تونل"
+                                                                    AppLanguage.AR -> "حظر تلقائي لنطاقات الإعلانات عبر النفق"
+                                                                    AppLanguage.EN -> "Automatically block ad networks and trackers inside the VPN tunnel"
+                                                                },
+                                                                checked = adBlockEnabled,
+                                                                onCheckedChange = {
+                                                                    adBlockEnabled = it
+                                                                    settingsStore.adBlockEnabled = it
+                                                                    if (it && dnsProvider != SettingsStore.DnsProvider.ADGUARD) {
+                                                                        dnsProvider = SettingsStore.DnsProvider.ADGUARD
+                                                                        settingsStore.dnsProvider = SettingsStore.DnsProvider.ADGUARD
+                                                                    }
+                                                                },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingToggleRow(
+                                                                title = s.verifyExitTitle,
+                                                                subtitle = s.verifyExitSub,
+                                                                checked = exitCheckEnabled,
+                                                                onCheckedChange = {
+                                                                    exitCheckEnabled = it
+                                                                    settingsStore.exitCheckEnabled = it
+                                                                },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingClickableRow(
+                                                                title = s.tunnelMtuTitle,
+                                                                value = s.mtuBytesValue(mtu),
+                                                                onClick = { showMtuDialog = true },
+                                                            )
+                                                        }
+                                                        1 -> {
+                                                            SectionHeading(s.sectionDns)
+                                                            SettingClickableRow(
+                                                                title = s.tunnelDnsTitle,
+                                                                value = when (dnsProvider) {
+                                                                    SettingsStore.DnsProvider.CUSTOM -> customDohUrl.ifBlank { dnsProvider.localizedLabel(s.language) }
+                                                                    else -> dnsProvider.localizedLabel(s.language)
+                                                                },
+                                                                onClick = { showDnsProviderDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingClickableRow(
+                                                                title = s.resolverDnsTitle,
+                                                                value = when (bootstrapDnsProvider) {
+                                                                    SettingsStore.BootstrapDnsProvider.CUSTOM -> s.language.localizeDigits(customBootstrapIp.ifBlank { bootstrapDnsProvider.localizedLabel(s.language) })
+                                                                    else -> bootstrapDnsProvider.localizedLabel(s.language)
+                                                                },
+                                                                onClick = { showBootstrapDnsDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                            SectionHeading(s.sectionSplitTunneling)
+                                                            SettingClickableRow(
+                                                                title = s.excludedAppsTitle,
+                                                                value = if (excludedApps.isEmpty()) s.none else s.excludedAppsCount(excludedApps.size),
+                                                                onClick = { showSplitTunnelDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                            SettingClickableRow(
+                                                                title = s.tlsFragmentationTitle,
+                                                                value = tlsSplitMode.localizedLabel(s.language),
+                                                                onClick = { showTlsSplitDialog = true },
+                                                            )
+                                                        }
+                                                        else -> {
+                                                            SettingToggleRow(
+                                                                title = s.proxyOnlyModeTitle,
+                                                                subtitle = s.proxyOnlyModeSub,
+                                                                checked = proxyOnlyMode,
+                                                                onCheckedChange = {
+                                                                    proxyOnlyMode = it
+                                                                    settingsStore.proxyOnlyMode = it
+                                                                },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingClickableRow(
+                                                                title = s.localBindAddressTitle,
+                                                                value = s.language.localizeDigits(socksBindAddress),
+                                                                onClick = { showSocksBindDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingClickableRow(
+                                                                title = s.socksPortTitle,
+                                                                value = s.language.localizeNumber(socksPort),
+                                                                onClick = { showSocksPortDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingToggleRow(
+                                                                title = s.enableHttpProxyTitle,
+                                                                subtitle = s.enableHttpProxySub,
+                                                                checked = httpProxyEnabled,
+                                                                onCheckedChange = {
+                                                                    httpProxyEnabled = it
+                                                                    settingsStore.httpProxyEnabled = it
+                                                                },
+                                                            )
+                                                            if (httpProxyEnabled) {
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                                SettingClickableRow(
+                                                                    title = s.httpProxyPortTitle,
+                                                                    value = s.language.localizeNumber(httpProxyPort),
+                                                                    onClick = { showHttpPortDialog = true },
+                                                                )
+                                                            }
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingClickableRow(
+                                                                title = s.customEdgeAddressTitle,
+                                                                value = if (customEdgeAddress.isBlank()) s.notSet else s.language.localizeDigits(customEdgeAddress),
+                                                                onClick = { showEdgeAddressDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingToggleRow(
+                                                                title = s.chainUpstreamProxyTitle,
+                                                                subtitle = s.chainUpstreamProxySub,
+                                                                checked = upstreamProxyEnabled,
+                                                                onCheckedChange = {
+                                                                    upstreamProxyEnabled = it
+                                                                    settingsStore.upstreamProxyEnabled = it
+                                                                },
+                                                            )
+                                                            if (upstreamProxyEnabled) {
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 6.dp))
+                                                                SettingClickableRow(
+                                                                    title = s.upstreamProxyTypeTitle,
+                                                                    value = upstreamProxyType.localizedLabel(s.language),
+                                                                    onClick = { showUpstreamProxyTypeDialog = true },
+                                                                )
+                                                                SettingClickableRow(
+                                                                    title = s.upstreamProxyAddressTitle,
+                                                                    value = if (upstreamProxyHost.isBlank()) s.notSet else s.language.localizeDigits("$upstreamProxyHost:$upstreamProxyPort"),
+                                                                    onClick = { showUpstreamProxyAddressDialog = true },
+                                                                )
+                                                                SettingClickableRow(
+                                                                    title = s.upstreamProxyCredentialsTitle,
+                                                                    value = if (upstreamProxyUsername.isBlank()) s.none else upstreamProxyUsername,
+                                                                    onClick = { showUpstreamProxyCredentialsDialog = true },
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -----------------------------------------------------------------
+                                        // CATEGORY 4: SPEED BOOSTER, BATTERY SAVER & AUTOMATION
+                                        // -----------------------------------------------------------------
+                                        SettingsCategory.SPEED_AUTOMATION -> {
+                                            NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                Column(Modifier.padding(16.dp)) {
+                                                    if (subPage == 0) {
+                                                        SettingToggleRow(
+                                                            title = s.unmeteredSpeedBoostTitle,
+                                                            subtitle = s.unmeteredSpeedBoostSub,
+                                                            checked = unmeteredVpnModeEnabled,
+                                                            onCheckedChange = {
+                                                                unmeteredVpnModeEnabled = it
+                                                                settingsStore.unmeteredVpnModeEnabled = it
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                        SettingToggleRow(
+                                                            title = s.tcpBufferBoostTitle,
+                                                            subtitle = s.tcpBufferBoostSub,
+                                                            checked = tcpBufferBoostEnabled,
+                                                            onCheckedChange = {
+                                                                tcpBufferBoostEnabled = it
+                                                                settingsStore.tcpBufferBoostEnabled = it
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                        SettingToggleRow(
+                                                            title = s.batterySaverModeTitle,
+                                                            subtitle = s.batterySaverModeSub,
+                                                            checked = batterySaverModeEnabled,
+                                                            onCheckedChange = {
+                                                                batterySaverModeEnabled = it
+                                                                settingsStore.batterySaverModeEnabled = it
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                        val powerManager = context.getSystemService(PowerManager::class.java)
+                                                        val isIgnoringBatteryOptimizations = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                                            runCatching { powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true }.getOrDefault(false)
+                                                        } else {
+                                                            true
+                                                        }
+                                                        SettingClickableRow(
+                                                            title = s.batteryExemptionTitle,
+                                                            value = if (isIgnoringBatteryOptimizations) s.batteryExemptionGrantedSub else s.batteryExemptionRequestSub,
+                                                            onClick = {
+                                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                                                    runCatching {
+                                                                        @Suppress("BatteryLife")
+                                                                        val intent = Intent(
+                                                                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                                                            Uri.parse("package:${context.packageName}"),
+                                                                        )
+                                                                        context.startActivity(intent)
+                                                                    }.onFailure {
+                                                                        runCatching {
+                                                                            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                        val canInstallPackages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                            runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
+                                                        } else {
+                                                            true
+                                                        }
+                                                        SettingClickableRow(
+                                                            title = s.installPermissionTitle,
+                                                            value = if (canInstallPackages) s.installPermissionGrantedSub else s.installPermissionRequestSub,
+                                                            onClick = {
+                                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                                    runCatching {
+                                                                        val intent = Intent(
+                                                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                                                            Uri.parse("package:${context.packageName}"),
+                                                                        )
+                                                                        context.startActivity(intent)
+                                                                    }
+                                                                }
+                                                            },
+                                                        )
+                                                    } else {
+                                                        SettingToggleRow(
+                                                            title = s.scheduleVpnTitle,
+                                                            subtitle = s.scheduleVpnSub,
+                                                            checked = scheduleEnabled,
+                                                            onCheckedChange = {
+                                                                scheduleEnabled = it
+                                                                settingsStore.scheduleEnabled = it
+                                                            },
+                                                        )
+                                                        if (scheduleEnabled) {
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                            ) {
+                                                                Box(modifier = Modifier.weight(1f)) {
+                                                                    SettingClickableRow(
+                                                                        title = s.scheduleFromLabel,
+                                                                        value = s.language.formatClockTimeLocalized(scheduleStartHour, scheduleStartMinute),
+                                                                        onClick = {
+                                                                            TimePickerDialog(
+                                                                                context,
+                                                                                { _, h, m ->
+                                                                                    scheduleStartHour = h
+                                                                                    scheduleStartMinute = m
+                                                                                    settingsStore.scheduleStartHour = h
+                                                                                    settingsStore.scheduleStartMinute = m
+                                                                                },
+                                                                                scheduleStartHour,
+                                                                                scheduleStartMinute,
+                                                                                true,
+                                                                            ).show()
+                                                                        },
+                                                                    )
+                                                                }
+                                                                Box(modifier = Modifier.weight(1f)) {
+                                                                    SettingClickableRow(
+                                                                        title = s.scheduleToLabel,
+                                                                        value = s.language.formatClockTimeLocalized(scheduleEndHour, scheduleEndMinute),
+                                                                        onClick = {
+                                                                            TimePickerDialog(
+                                                                                context,
+                                                                                { _, h, m ->
+                                                                                    scheduleEndHour = h
+                                                                                    scheduleEndMinute = m
+                                                                                    settingsStore.scheduleEndHour = h
+                                                                                    settingsStore.scheduleEndMinute = m
+                                                                                },
+                                                                                scheduleEndHour,
+                                                                                scheduleEndMinute,
+                                                                                true,
+                                                                            ).show()
+                                                                        },
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                        SettingToggleRow(
+                                                            title = s.idleDisconnectTitle,
+                                                            subtitle = s.idleDisconnectSub,
+                                                            checked = idleDisconnectEnabled,
+                                                            onCheckedChange = {
+                                                                idleDisconnectEnabled = it
+                                                                settingsStore.idleDisconnectEnabled = it
+                                                            },
+                                                        )
+                                                        if (idleDisconnectEnabled) {
+                                                            SettingClickableRow(
+                                                                title = s.idleTimeoutTitle,
+                                                                value = s.language.formatMinutesLocalized(idleTimeoutMinutes),
+                                                                onClick = { showIdleTimeoutDialog = true },
+                                                            )
+                                                        }
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                        SettingToggleRow(
+                                                            title = s.sessionDataLimitTitle,
+                                                            subtitle = s.sessionDataLimitSub,
+                                                            checked = sessionDataLimitEnabled,
+                                                            onCheckedChange = {
+                                                                sessionDataLimitEnabled = it
+                                                                settingsStore.sessionDataLimitEnabled = it
+                                                            },
+                                                        )
+                                                        if (sessionDataLimitEnabled) {
+                                                            SettingClickableRow(
+                                                                title = s.sessionDataLimitAmountTitle,
+                                                                value = "${s.language.localizeNumber(sessionDataLimitMb)} MB",
+                                                                onClick = { showDataCapDialog = true },
+                                                            )
+                                                        }
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                        SettingToggleRow(
+                                                            title = s.smartPingSwitchTitle,
+                                                            subtitle = s.smartPingSwitchSub,
+                                                            checked = smartPingAutoSwitch,
+                                                            onCheckedChange = {
+                                                                smartPingAutoSwitch = it
+                                                                settingsStore.smartPingAutoSwitch = it
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                        SettingToggleRow(
+                                                            title = s.autoConnectLaunchTitle,
+                                                            subtitle = s.autoConnectLaunchSub,
+                                                            checked = autoConnectOnLaunch,
+                                                            onCheckedChange = {
+                                                                autoConnectOnLaunch = it
+                                                                settingsStore.autoConnectOnLaunch = it
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                        SettingToggleRow(
+                                                            title = s.stealthNotificationTitle,
+                                                            subtitle = s.stealthNotificationSub,
+                                                            checked = stealthNotificationEnabled,
+                                                            onCheckedChange = {
+                                                                stealthNotificationEnabled = it
+                                                                settingsStore.stealthNotificationEnabled = it
+                                                            },
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -----------------------------------------------------------------
+                                        // CATEGORY 5: SMART NETWORK & SECURITY TOOLKIT
+                                        // -----------------------------------------------------------------
+                                        SettingsCategory.SMART_TOOLKIT -> {
+                                            NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                Column(Modifier.padding(18.dp)) {
+                                                    SettingClickableRow(
+                                                        title = s.toolSpeedTitle,
+                                                        value = s.toolSpeedSubtitle,
+                                                        onClick = { onOpenTools(0) },
                                                     )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.SwapHoriz,
-                                                        contentDescription = null,
-                                                        tint = neu.accent,
-                                                        modifier = Modifier.size(18.dp),
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    SettingClickableRow(
+                                                        title = s.toolLeakTitle,
+                                                        value = s.toolLeakSubtitle,
+                                                        onClick = { onOpenTools(1) },
+                                                    )
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    SettingClickableRow(
+                                                        title = s.toolScannerTitle,
+                                                        value = s.toolScannerSubtitle,
+                                                        onClick = { onOpenTools(2) },
+                                                    )
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    SettingClickableRow(
+                                                        title = s.toolWatchdogTitle,
+                                                        value = s.toolWatchdogSubtitle,
+                                                        onClick = { onOpenTools(3) },
+                                                    )
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    SettingClickableRow(
+                                                        title = s.toolMtuTitle,
+                                                        value = s.toolMtuSubtitle,
+                                                        onClick = { onOpenTools(4) },
                                                     )
                                                 }
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(28.dp)
-                                                        .clip(CircleShape)
-                                                        .clickable { tokenStore.removeAccount(acc.email) },
-                                                    contentAlignment = Alignment.Center,
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.DeleteOutline,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                                                        modifier = Modifier.size(16.dp),
-                                                    )
+                                            }
+                                        }
+
+                                        // -----------------------------------------------------------------
+                                        // CATEGORY 6: MULTI-ACCOUNT MANAGER, MOZILLA & ABOUT
+                                        // -----------------------------------------------------------------
+                                        SettingsCategory.ACCOUNTS_ABOUT -> {
+                                            if (subPage == 0) {
+                                                NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                    Column(Modifier.padding(16.dp)) {
+                                                        SettingToggleRow(
+                                                            title = when (s.language) {
+                                                                AppLanguage.FA -> "تعویض خودکار اکانت بر اساس درصد مصرف"
+                                                                AppLanguage.AR -> "تبديل الحساب تلقائياً حسب نسبة الاستهلاك"
+                                                                AppLanguage.EN -> "Auto-Switch Account on Quota Threshold"
+                                                            },
+                                                            subtitle = when (s.language) {
+                                                                AppLanguage.FA -> "انتقال خودکار اتصال به اکانت بعدی هنگام رسیدن مصرف به سقف"
+                                                                AppLanguage.AR -> "الانتقال تلقائياً لحساب آخر عند وصول الاستهلاك للحد"
+                                                                AppLanguage.EN -> "Automatically switch to another saved account when quota exceeds threshold"
+                                                            },
+                                                            checked = autoSwitchAccountByQuotaEnabled,
+                                                            onCheckedChange = {
+                                                                autoSwitchAccountByQuotaEnabled = it
+                                                                settingsStore.autoSwitchAccountByQuotaEnabled = it
+                                                            },
+                                                        )
+                                                        if (autoSwitchAccountByQuotaEnabled) {
+                                                            Spacer(Modifier.height(8.dp))
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                            ) {
+                                                                listOf(75, 85, 90, 95).forEach { pct ->
+                                                                    val isSelected = autoSwitchQuotaThresholdPercent == pct
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .clip(RoundedCornerShape(10.dp))
+                                                                            .background(if (isSelected) neu.accent.copy(alpha = 0.16f) else neu.surfaceElevated)
+                                                                            .border(
+                                                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                                                color = if (isSelected) neu.accent else neu.textSecondary.copy(alpha = 0.15f),
+                                                                                shape = RoundedCornerShape(10.dp),
+                                                                            )
+                                                                            .clickable {
+                                                                                autoSwitchQuotaThresholdPercent = pct
+                                                                                settingsStore.autoSwitchQuotaThresholdPercent = pct
+                                                                            }
+                                                                            .padding(vertical = 7.dp),
+                                                                        contentAlignment = Alignment.Center,
+                                                                    ) {
+                                                                        Text(
+                                                                            text = s.language.formatPercentLocalized(pct),
+                                                                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                            color = if (isSelected) neu.accent else neu.textPrimary,
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+
+                                                        Text(
+                                                            text = when (s.language) {
+                                                                AppLanguage.FA -> "اکانت‌های ذخیره‌شده (${s.language.localizeNumber(savedAccounts.size)})"
+                                                                AppLanguage.AR -> "الحسابات المحفوظة (${s.language.localizeNumber(savedAccounts.size)})"
+                                                                AppLanguage.EN -> "Saved Accounts (${savedAccounts.size})"
+                                                            },
+                                                            style = MaterialTheme.typography.titleSmall.copy(fontFamily = fonts.headingFont, fontWeight = FontWeight.Bold),
+                                                            color = neu.textPrimary,
+                                                        )
+                                                        Spacer(Modifier.height(6.dp))
+                                                        if (savedAccounts.isEmpty()) {
+                                                            Text(
+                                                                text = activeAccountEmail ?: when (s.language) {
+                                                                    AppLanguage.FA -> "اکانت فعلی متصل است"
+                                                                    AppLanguage.AR -> "الحساب الحالي متصل"
+                                                                    AppLanguage.EN -> "Active session connected"
+                                                                },
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = neu.textSecondary,
+                                                            )
+                                                        } else {
+                                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                savedAccounts.take(3).forEach { acc ->
+                                                                    val isCurrent = acc.email.equals(activeAccountEmail, ignoreCase = true)
+                                                                    Row(
+                                                                        modifier = Modifier
+                                                                            .fillMaxWidth()
+                                                                            .clip(RoundedCornerShape(12.dp))
+                                                                            .background(if (isCurrent) neu.accent.copy(alpha = 0.12f) else neu.surfaceElevated.copy(alpha = 0.7f))
+                                                                            .border(1.dp, if (isCurrent) neu.accent.copy(alpha = 0.45f) else neu.textSecondary.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                                                                            .clickable {
+                                                                                if (!isCurrent) tokenStore.switchToAccount(acc.email)
+                                                                            }
+                                                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically,
+                                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                                    ) {
+                                                                        Column(modifier = Modifier.weight(1f)) {
+                                                                            Text(
+                                                                                text = acc.email,
+                                                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                                                color = if (isCurrent) neu.accent else neu.textPrimary,
+                                                                                maxLines = 1,
+                                                                                overflow = TextOverflow.Ellipsis,
+                                                                            )
+                                                                            val quotaLabel = when {
+                                                                                acc.isUnlimited -> when (s.language) {
+                                                                                    AppLanguage.FA -> "حجم نامحدود"
+                                                                                    AppLanguage.AR -> "غير محدود"
+                                                                                    AppLanguage.EN -> "Unlimited Quota"
+                                                                                }
+                                                                                acc.quotaMax != null && acc.quotaMax > 0L -> {
+                                                                                    val pct = s.language.formatPercentLocalized(acc.usedPercent)
+                                                                                    when (s.language) {
+                                                                                        AppLanguage.FA -> "مصرف شده: $pct"
+                                                                                        AppLanguage.AR -> "المستهلك: $pct"
+                                                                                        AppLanguage.EN -> "Used: $pct"
+                                                                                    }
+                                                                                }
+                                                                                else -> when (s.language) {
+                                                                                    AppLanguage.FA -> "آماده جایگزینی سریع"
+                                                                                    AppLanguage.AR -> "جاهز للتبديل السريع"
+                                                                                    AppLanguage.EN -> "Ready for instant switch"
+                                                                                }
+                                                                            }
+                                                                            Text(
+                                                                                text = quotaLabel,
+                                                                                style = MaterialTheme.typography.labelSmall,
+                                                                                color = neu.textSecondary,
+                                                                            )
+                                                                        }
+                                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                            Icon(
+                                                                                imageVector = if (isCurrent) Icons.Filled.CheckCircle else Icons.Filled.SwapHoriz,
+                                                                                contentDescription = null,
+                                                                                tint = neu.accent,
+                                                                                modifier = Modifier.size(18.dp),
+                                                                            )
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .size(26.dp)
+                                                                                    .clip(CircleShape)
+                                                                                    .clickable { tokenStore.removeAccount(acc.email) },
+                                                                                contentAlignment = Alignment.Center,
+                                                                            ) {
+                                                                                Icon(
+                                                                                    imageVector = Icons.Filled.DeleteOutline,
+                                                                                    contentDescription = null,
+                                                                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                                                                    modifier = Modifier.size(16.dp),
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Spacer(Modifier.height(10.dp))
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .neumorphicTouchBounce()
+                                                                .clip(RoundedCornerShape(14.dp))
+                                                                .background(neu.accent.copy(alpha = 0.14f))
+                                                                .border(1.dp, neu.accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                                                                .clickable(onClick = onSignOut)
+                                                                .padding(vertical = 10.dp, horizontal = 12.dp),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                Icon(Icons.Filled.AddCircleOutline, contentDescription = null, tint = neu.accent, modifier = Modifier.size(18.dp))
+                                                                Spacer(Modifier.width(8.dp))
+                                                                Text(
+                                                                    text = when (s.language) {
+                                                                        AppLanguage.FA -> "افزودن یا ثبت‌نام اکانت جدید"
+                                                                        AppLanguage.AR -> "إضافة أو تسجيل حساب جديد"
+                                                                        AppLanguage.EN -> "Add or Sign Up New Account"
+                                                                    },
+                                                                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = fonts.headingFont, fontWeight = FontWeight.Bold),
+                                                                    color = neu.accent,
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Spacer(Modifier.height(8.dp))
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .neumorphicTouchBounce()
+                                                                .clip(RoundedCornerShape(14.dp))
+                                                                .background(neu.surfaceElevated)
+                                                                .border(1.dp, neu.accent.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+                                                                .clickable { showMozillaWebPortal = true }
+                                                                .padding(vertical = 10.dp, horizontal = 12.dp),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                Icon(Icons.Filled.Language, contentDescription = null, tint = neu.accent, modifier = Modifier.size(18.dp))
+                                                                Spacer(Modifier.width(8.dp))
+                                                                Text(
+                                                                    text = when (s.language) {
+                                                                        AppLanguage.FA -> "ساخت اکانت در سایت رسمی موزیلا (داخل برنامه)"
+                                                                        AppLanguage.AR -> "إنشاء حساب في موقع موزيلا الرسمي (داخل التطبيق)"
+                                                                        AppLanguage.EN -> "Create Account on Official Mozilla Site (In-App)"
+                                                                    },
+                                                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = fonts.headingFont, fontWeight = FontWeight.Bold),
+                                                                    color = neu.textPrimary,
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                    NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
+                                                        Column(Modifier.padding(16.dp)) {
+                                                            SettingClickableRow(
+                                                                title = s.viewConnectionLogsTitle,
+                                                                value = s.viewConnectionLogsSub,
+                                                                onClick = onOpenLogs,
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingClickableRow(
+                                                                title = s.versionTitle,
+                                                                value = s.language.localizeDigits(BuildConfig.VERSION_NAME),
+                                                                onClick = {},
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingSocialLinkRow(
+                                                                title = s.instagramTitle,
+                                                                value = s.instagramSubtitle,
+                                                                isInstagram = true,
+                                                                onClick = {
+                                                                    runCatching {
+                                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(INSTAGRAM_URL)))
+                                                                    }
+                                                                },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingSocialLinkRow(
+                                                                title = s.telegramTitle,
+                                                                value = s.telegramSubtitle,
+                                                                isInstagram = false,
+                                                                onClick = {
+                                                                    runCatching {
+                                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_URL)))
+                                                                    }
+                                                                },
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(18.dp))
+                                                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                                                            .border(
+                                                                width = 1.dp,
+                                                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.25f),
+                                                                shape = RoundedCornerShape(18.dp),
+                                                            )
+                                                            .clickable(onClick = onSignOut)
+                                                            .padding(vertical = 14.dp),
+                                                        contentAlignment = Alignment.Center,
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(
+                                                                Icons.AutoMirrored.Filled.Logout,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.error,
+                                                                modifier = Modifier.size(20.dp),
+                                                            )
+                                                            Spacer(Modifier.width(10.dp))
+                                                            Text(
+                                                                s.signOutButton,
+                                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                                    fontFamily = fonts.headingFont,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                ),
+                                                                color = MaterialTheme.colorScheme.error,
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
 
-                            Spacer(Modifier.height(12.dp))
+                                // Bottom Non-Scrolling Page Stepper Bar
+                                if (subPageTitles.size > 1) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(
+                                                    if (subPage > 0) neu.surfaceElevated else neu.surfaceElevated.copy(alpha = 0.35f),
+                                                )
+                                                .clickable(enabled = subPage > 0) {
+                                                    if (subPage > 0) selectedSubPage = subPage - 1
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                                        ) {
+                                            Text(
+                                                text = when (s.language) {
+                                                    AppLanguage.FA -> "صفحه قبلی"
+                                                    AppLanguage.AR -> "الصفحة السابقة"
+                                                    AppLanguage.EN -> "Previous Page"
+                                                },
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = if (subPage > 0) neu.textPrimary else neu.textSecondary.copy(alpha = 0.4f),
+                                            )
+                                        }
 
-                            // Add / Register Another Account Button
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .neumorphicTouchBounce()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(neu.accent.copy(alpha = 0.14f))
-                                    .border(1.dp, neu.accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                    .clickable(onClick = onSignOut)
-                                    .padding(vertical = 12.dp, horizontal = 14.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Filled.AddCircleOutline,
-                                        contentDescription = null,
-                                        tint = neu.accent,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = when (s.language) {
-                                            AppLanguage.FA -> "افزودن یا ثبت‌نام اکانت جدید"
-                                            AppLanguage.AR -> "إضافة أو تسجيل حساب جديد"
-                                            AppLanguage.EN -> "Add or Sign Up New Account"
-                                        },
-                                        style = MaterialTheme.typography.titleSmall.copy(
-                                            fontFamily = fonts.headingFont,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = neu.accent,
-                                    )
-                                }
-                            }
+                                        Text(
+                                            text = "${s.language.localizeNumber(subPage + 1)} / ${s.language.localizeNumber(subPageTitles.size)}",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontFamily = fonts.monoFont,
+                                                fontWeight = FontWeight.Bold,
+                                            ),
+                                            color = neu.accent,
+                                        )
 
-                            Spacer(Modifier.height(10.dp))
-
-                            // In-App Mozilla Official Portal Button (opens accounts.firefox.com inside the app)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .neumorphicTouchBounce()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(neu.surfaceElevated)
-                                    .border(1.dp, neu.accent.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
-                                    .clickable { showMozillaWebPortal = true }
-                                    .padding(vertical = 12.dp, horizontal = 14.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Language,
-                                        contentDescription = null,
-                                        tint = neu.accent,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = when (s.language) {
-                                            AppLanguage.FA -> "ساخت اکانت در سایت رسمی موزیلا (داخل برنامه)"
-                                            AppLanguage.AR -> "إنشاء حساب في موقع موزيلا الرسمي (داخل التطبيق)"
-                                            AppLanguage.EN -> "Create Account on Official Mozilla Site (In-App)"
-                                        },
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontFamily = fonts.headingFont,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = neu.textPrimary,
-                                    )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(
+                                                    if (subPage < subPageTitles.lastIndex) neu.accent.copy(alpha = 0.16f)
+                                                    else neu.surfaceElevated.copy(alpha = 0.35f),
+                                                )
+                                                .clickable(enabled = subPage < subPageTitles.lastIndex) {
+                                                    if (subPage < subPageTitles.lastIndex) selectedSubPage = subPage + 1
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                                        ) {
+                                            Text(
+                                                text = when (s.language) {
+                                                    AppLanguage.FA -> "صفحه بعدی"
+                                                    AppLanguage.AR -> "الصفحة التالية"
+                                                    AppLanguage.EN -> "Next Page"
+                                                },
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = if (subPage < subPageTitles.lastIndex) neu.accent else neu.textSecondary.copy(alpha = 0.4f),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-
-                    Spacer(Modifier.height(26.dp))
-
-                    // Sign Out Button
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(18.dp),
-                            )
-                            .clickable(onClick = onSignOut)
-                            .padding(vertical = 16.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Logout,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                s.signOutButton,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(36.dp))
                 }
-            }
             }
         }
     }

@@ -606,12 +606,19 @@ fun HomeScreen(
                         .staggeredEntrance(0),
                 ) {
                     // Enlarged 320.dp harmonic wave rings behind the timer & status badge
+                    val waveConfigRev by app.settingsStore.islandConfigRevision.collectAsState()
+                    @Suppress("UNUSED_EXPRESSION")
+                    waveConfigRev
                     NeumorphicRadarPulse(
                         color = if (state == ConnectionState.DISCONNECTED) neu.accent else statusColor,
                         isActive = state == ConnectionState.CONNECTED,
                         isConnecting = state == ConnectionState.CONNECTING,
                         size = 320.dp,
                         waveStyle = themeController.heroWaveStyle,
+                        speedMultiplier = app.settingsStore.waveSpeedMultiplier,
+                        amplitudeScale = app.settingsStore.waveAmplitudeScale,
+                        glowEnabled = app.settingsStore.waveGlowEnabled,
+                        colorMode = app.settingsStore.waveColorMode,
                     )
 
                     // Overlay Column takes full width so SECURE & CONNECTED never truncates or wraps
@@ -900,6 +907,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(18.dp))
 
                 // 7B. ANIMATED WORLD MAP ORIGIN-TO-EXIT ROUTE CARD
+                val liveProtocolBadge by FoxyVpnService.activeProtocolBadge.collectAsState()
                 WorldRouteMapCard(
                     state = state,
                     realIp = realIp,
@@ -907,7 +915,7 @@ fun HomeScreen(
                     cachedRealCountry = app.settingsStore.cachedRealCountry,
                     selectedProxy = selectedProxy,
                     vpnEdgeIp = vpnEdgeIp,
-                    protocolLabel = app.settingsStore.connectionProtocolMode.shortBadge,
+                    protocolLabel = if (state == ConnectionState.CONNECTED) liveProtocolBadge else app.settingsStore.connectionProtocolMode.shortBadge,
                     adBlockEnabled = app.settingsStore.adBlockEnabled,
                     onOpenServers = onOpenServers,
                     modifier = Modifier
