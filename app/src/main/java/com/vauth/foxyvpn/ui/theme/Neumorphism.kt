@@ -103,7 +103,7 @@ data class NeumorphicColors(
     val textPrimary: Color,
     val textSecondary: Color,
     val isDark: Boolean,
-    val designStyle: FoxyUiDesignStyle = FoxyUiDesignStyle.CLAYMORPHISM,
+    val designStyle: FoxyUiDesignStyle = FoxyUiDesignStyle.NEUMORPHISM,
 )
 
 val LocalNeumorphicColors = staticCompositionLocalOf {
@@ -117,7 +117,7 @@ val LocalNeumorphicColors = staticCompositionLocalOf {
         textPrimary = md_theme_light_onBackground,
         textSecondary = md_theme_light_onSurfaceVariant,
         isDark = false,
-        designStyle = FoxyUiDesignStyle.CLAYMORPHISM,
+        designStyle = FoxyUiDesignStyle.NEUMORPHISM,
     )
 }
 
@@ -127,7 +127,7 @@ val currentNeumorphicColors: NeumorphicColors
     get() = LocalNeumorphicColors.current
 
 /**
- * Renders style-adaptive outer shadow / bevel effects for all 6 UI Design Styles.
+ * Renders style-adaptive outer shadow / bevel effects for Soft Neumorphism.
  */
 fun Modifier.neumorphicRaised(
     shape: Shape = RoundedCornerShape(16.dp),
@@ -138,110 +138,57 @@ fun Modifier.neumorphicRaised(
     darkShadowColor: Color? = null,
     designStyle: FoxyUiDesignStyle = FoxyUiDesignStyle.NEUMORPHISM,
     isDark: Boolean = false,
-    accentColor: Color = Color(0xFFFF6D00),
+    accentColor: Color = Color(0xFFFF5E1A),
 ): Modifier = this.then(
     Modifier.drawBehind {
         if (size.width <= 2f || size.height <= 2f || !size.width.isFinite() || !size.height.isFinite()) return@drawBehind
         val radiusPx = cornerRadius.toPx().coerceAtLeast(0f)
 
-        when (designStyle) {
-            FoxyUiDesignStyle.PIXEL_GOOGLE -> {
-                // Google Pixel Material You uses clean flat tonal surfaces with subtle ambient lift
-                val dropOffset = (if (isPressed) 0.5.dp else 1.5.dp).toPx()
-                drawRoundRect(
-                    color = accentColor.copy(alpha = if (isDark) 0.08f else 0.06f),
-                    topLeft = Offset(0f, dropOffset),
-                    size = size,
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                )
-            }
-            FoxyUiDesignStyle.NEO_BRUTALISM -> {
-                // Bold hard-offset zero-blur brutalist poster shadow
-                val hardOffset = (if (isPressed) 2.dp else 5.5.dp).toPx()
-                val shadowColor = if (isDark) accentColor.copy(alpha = 0.92f) else Color(0xFF0B0F19)
-                drawRoundRect(
-                    color = shadowColor,
-                    topLeft = Offset(hardOffset, hardOffset),
-                    size = size,
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                )
-            }
-            FoxyUiDesignStyle.BENTO_UI -> {
-                val dropOffset = (if (isPressed) 1.dp else 4.dp).toPx()
-                drawRoundRect(
-                    color = Color.Black.copy(alpha = if (isDark) 0.38f else 0.08f),
-                    topLeft = Offset(0f, dropOffset),
-                    size = size,
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                )
-            }
-            FoxyUiDesignStyle.EDITORIAL_DESIGN -> {
-                val dropOffset = (if (isPressed) 1.dp else 3.dp).toPx()
-                drawRoundRect(
-                    color = Color.Black.copy(alpha = if (isDark) 0.34f else 0.09f),
-                    topLeft = Offset(dropOffset * 0.6f, dropOffset),
-                    size = size,
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                )
-            }
-            FoxyUiDesignStyle.DARK_LUXURY -> {
-                val glowRadius = (if (isPressed) 2.dp else 6.dp).toPx()
-                drawRoundRect(
-                    color = Color(0xFFE5B84B).copy(alpha = if (isPressed) 0.08f else 0.16f),
-                    topLeft = Offset(0f, glowRadius * 0.45f),
-                    size = size,
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                )
-            }
-            FoxyUiDesignStyle.CLAYMORPHISM,
-            FoxyUiDesignStyle.NEUMORPHISM -> {
-                val lightColor = lightShadowColor ?: if (drawContext.size.width > 0) Color.White.copy(alpha = 0.9f) else Color.White
-                val darkColor = darkShadowColor ?: Color.Black.copy(alpha = 0.15f)
+        val lightColor = lightShadowColor ?: if (isDark) Color(0xFF2F343F).copy(alpha = 0.55f) else Color.White.copy(alpha = 0.92f)
+        val darkColor = darkShadowColor ?: if (isDark) Color(0xFF0B0C10).copy(alpha = 0.85f) else Color(0xFFC2C9D6).copy(alpha = 0.65f)
 
-                val currentElev = if (isPressed) (elevation * 0.25f) else elevation
-                val blurPx = currentElev.toPx()
-                val offsetPx = (currentElev * 0.85f).toPx()
+        val currentElev = if (isPressed) (elevation * 0.25f) else elevation
+        val blurPx = (currentElev * 1.35f).toPx()
+        val offsetPx = (currentElev * 0.85f).toPx()
 
-                drawIntoCanvas { canvas ->
-                    if (blurPx > 0.5f && blurPx.isFinite()) {
-                        val paintLight = Paint().asFrameworkPaint().apply {
-                            color = lightColor.toArgb()
-                            isAntiAlias = true
-                            maskFilter = BlurMaskFilter(blurPx.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
-                        }
-                        canvas.nativeCanvas.drawRoundRect(
-                            -offsetPx,
-                            -offsetPx,
-                            size.width - offsetPx,
-                            size.height - offsetPx,
-                            radiusPx,
-                            radiusPx,
-                            paintLight,
-                        )
-
-                        val paintDark = Paint().asFrameworkPaint().apply {
-                            color = darkColor.toArgb()
-                            isAntiAlias = true
-                            maskFilter = BlurMaskFilter(blurPx.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
-                        }
-                        canvas.nativeCanvas.drawRoundRect(
-                            offsetPx,
-                            offsetPx,
-                            size.width + offsetPx,
-                            size.height + offsetPx,
-                            radiusPx,
-                            radiusPx,
-                            paintDark,
-                        )
-                    }
+        drawIntoCanvas { canvas ->
+            if (blurPx > 0.5f && blurPx.isFinite()) {
+                val paintLight = Paint().asFrameworkPaint().apply {
+                    color = lightColor.toArgb()
+                    isAntiAlias = true
+                    maskFilter = BlurMaskFilter(blurPx.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
                 }
+                canvas.nativeCanvas.drawRoundRect(
+                    -offsetPx,
+                    -offsetPx,
+                    size.width - offsetPx,
+                    size.height - offsetPx,
+                    radiusPx,
+                    radiusPx,
+                    paintLight,
+                )
+
+                val paintDark = Paint().asFrameworkPaint().apply {
+                    color = darkColor.toArgb()
+                    isAntiAlias = true
+                    maskFilter = BlurMaskFilter(blurPx.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
+                }
+                canvas.nativeCanvas.drawRoundRect(
+                    offsetPx,
+                    offsetPx,
+                    size.width + offsetPx,
+                    size.height + offsetPx,
+                    radiusPx,
+                    radiusPx,
+                    paintDark,
+                )
             }
         }
     }
 )
 
 /**
- * Renders distinct inner treatments for all 7 UI Design Skins so changing skins visibly transforms cards and controls.
+ * Renders tactile Soft Neumorphism inner top-left rim bevel and subtle gradient shading matching the reference images.
  */
 fun Modifier.styleInnerTreatment(
     designStyle: FoxyUiDesignStyle,
@@ -255,121 +202,20 @@ fun Modifier.styleInnerTreatment(
         if (w <= 4f || h <= 4f || !w.isFinite() || !h.isFinite()) return@drawBehind
         val r = cornerRadius.toPx().coerceAtLeast(0f)
 
-        when (designStyle) {
-            FoxyUiDesignStyle.PIXEL_GOOGLE -> {
-                // Google Pixel Material You pastel tonal wash + pill indicator accent
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            accentColor.copy(alpha = if (isDark) 0.15f else 0.12f),
-                            accentColor.copy(alpha = if (isDark) 0.05f else 0.04f),
-                        ),
-                    ),
-                    size = size,
-                    cornerRadius = CornerRadius(r, r),
-                )
-            }
-            FoxyUiDesignStyle.CLAYMORPHISM -> {
-                // Deep 3D inflated puffy clay inner bevel + glossy specular dome
-                val bevel = 6.dp.toPx().coerceAtMost(minOf(w, h) * 0.28f)
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isDark) 0.24f else 0.85f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = if (isDark) 0.45f else 0.14f),
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(w, h),
-                    ),
-                    size = size,
-                    cornerRadius = CornerRadius(r, r),
-                )
-                drawRoundRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isDark) 0.14f else 0.50f),
-                            Color.Transparent,
-                        ),
-                        center = Offset(w * 0.25f, h * 0.20f),
-                        radius = maxOf(w, h) * 0.70f,
-                    ),
-                    topLeft = Offset(bevel * 0.25f, bevel * 0.25f),
-                    size = Size((w - bevel * 0.5f).coerceAtLeast(1f), (h - bevel * 0.5f).coerceAtLeast(1f)),
-                    cornerRadius = CornerRadius(r, r),
-                )
-            }
-            FoxyUiDesignStyle.DARK_LUXURY -> {
-                // Champagne gold metallic sheen + inner luxury frame hairline
-                val gold = Color(0xFFE5B84B)
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            gold.copy(alpha = 0.18f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.35f),
-                        ),
-                    ),
-                    size = size,
-                    cornerRadius = CornerRadius(r, r),
-                )
-                val inset = 3.5.dp.toPx()
-                if (w > inset * 3 && h > inset * 3) {
-                    drawRoundRect(
-                        color = gold.copy(alpha = 0.22f),
-                        topLeft = Offset(inset, inset),
-                        size = Size(w - inset * 2, h - inset * 2),
-                        cornerRadius = CornerRadius((r - inset).coerceAtLeast(2f), (r - inset).coerceAtLeast(2f)),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8.dp.toPx()),
-                    )
-                }
-            }
-            FoxyUiDesignStyle.NEO_BRUTALISM -> {
-                // High-contrast top-right corner geometric accent stripe
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            accentColor.copy(alpha = if (isDark) 0.14f else 0.10f),
-                            Color.Transparent,
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(w * 0.6f, h * 0.6f),
-                    ),
-                    size = size,
-                    cornerRadius = CornerRadius(r, r),
-                )
-            }
-            FoxyUiDesignStyle.BENTO_UI -> {
-                // Crisp Bento glass top highlight + subtle modular corner dot
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isDark) 0.10f else 0.68f),
-                            Color.Transparent,
-                        ),
-                        startY = 0f,
-                        endY = h * 0.45f,
-                    ),
-                    size = size,
-                    cornerRadius = CornerRadius(r, r),
-                )
-                drawCircle(
-                    color = accentColor.copy(alpha = 0.35f),
-                    radius = 2.5.dp.toPx(),
-                    center = Offset(w - 12.dp.toPx(), 12.dp.toPx()),
-                )
-            }
-            FoxyUiDesignStyle.EDITORIAL_DESIGN -> {
-                // Bold architectural magazine top rule bar + fine bottom rule
-                val lineH = 3.5.dp.toPx()
-                drawRect(
-                    color = accentColor.copy(alpha = if (isDark) 0.78f else 0.72f),
-                    topLeft = Offset(0f, 0f),
-                    size = Size(w, lineH),
-                )
-            }
-            else -> Unit
-        }
+        // Tactile Soft Neumorphism subtle diagonal surface sheen + top-left rim highlight
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = if (isDark) 0.055f else 0.62f),
+                    Color.Transparent,
+                    Color.Black.copy(alpha = if (isDark) 0.24f else 0.06f),
+                ),
+                start = Offset(0f, 0f),
+                end = Offset(w, h),
+            ),
+            size = size,
+            cornerRadius = CornerRadius(r, r),
+        )
     }
 )
 
@@ -403,20 +249,20 @@ fun Modifier.neumorphicSunken(
             // Top-left inset dark shadow
             drawRoundRect(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color.Black.copy(alpha = 0.14f), Color.Transparent),
+                    colors = listOf(Color.Black.copy(alpha = 0.32f), Color.Transparent),
                     start = Offset(0f, 0f),
-                    end = Offset((d * 2.5f).coerceAtLeast(2f), (d * 2.5f).coerceAtLeast(2f)),
+                    end = Offset((d * 3f).coerceAtLeast(2f), (d * 3f).coerceAtLeast(2f)),
                 ),
                 size = size,
                 cornerRadius = CornerRadius(r, r),
             )
 
             // Bottom-right inset light highlight
-            val startX = (w - d * 2f).coerceAtMost(w - 2f)
-            val startY = (h - d * 2f).coerceAtMost(h - 2f)
+            val startX = (w - d * 2.4f).coerceAtMost(w - 2f)
+            val startY = (h - d * 2.4f).coerceAtMost(h - 2f)
             drawRoundRect(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.25f)),
+                    colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.14f)),
                     start = Offset(startX, startY),
                     end = Offset(w, h),
                 ),
@@ -429,53 +275,27 @@ fun Modifier.neumorphicSunken(
 @Composable
 fun NeumorphicCard(
     modifier: Modifier = Modifier,
-    cornerRadius: Dp = 20.dp,
+    cornerRadius: Dp = 22.dp,
     elevation: Dp = 6.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val neu = currentNeumorphicColors
-    val style = neu.designStyle
+    val style = FoxyUiDesignStyle.NEUMORPHISM
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    val effectiveCorner = when (style) {
-        FoxyUiDesignStyle.PIXEL_GOOGLE -> 28.dp
-        FoxyUiDesignStyle.CLAYMORPHISM -> (cornerRadius * 1.35f).coerceAtLeast(28.dp)
-        FoxyUiDesignStyle.NEO_BRUTALISM -> 8.dp
-        FoxyUiDesignStyle.BENTO_UI -> 24.dp
-        FoxyUiDesignStyle.EDITORIAL_DESIGN -> 4.dp
-        FoxyUiDesignStyle.DARK_LUXURY -> 16.dp
-        FoxyUiDesignStyle.NEUMORPHISM -> cornerRadius
-    }
+    val effectiveCorner = cornerRadius
 
     val animatedElevation by animateDpAsState(
-        targetValue = if (isPressed) elevation * 0.35f else elevation,
+        targetValue = if (isPressed) elevation * 0.3f else elevation,
         animationSpec = spring(stiffness = 400f),
         label = "neu-card-elevation",
     )
 
     val shape = RoundedCornerShape(effectiveCorner)
-
-    val borderWidth = when (style) {
-        FoxyUiDesignStyle.PIXEL_GOOGLE -> 1.dp
-        FoxyUiDesignStyle.NEO_BRUTALISM -> 2.6.dp
-        FoxyUiDesignStyle.CLAYMORPHISM -> 1.8.dp
-        FoxyUiDesignStyle.DARK_LUXURY -> 1.5.dp
-        FoxyUiDesignStyle.BENTO_UI -> 1.4.dp
-        FoxyUiDesignStyle.EDITORIAL_DESIGN -> 1.2.dp
-        FoxyUiDesignStyle.NEUMORPHISM -> 1.dp
-    }
-
-    val borderColor = when (style) {
-        FoxyUiDesignStyle.PIXEL_GOOGLE -> neu.accent.copy(alpha = if (neu.isDark) 0.28f else 0.22f)
-        FoxyUiDesignStyle.NEO_BRUTALISM -> if (neu.isDark) neu.accent else Color(0xFF0B0F19)
-        FoxyUiDesignStyle.DARK_LUXURY -> Color(0xFFE5B84B).copy(alpha = 0.55f)
-        FoxyUiDesignStyle.CLAYMORPHISM -> if (neu.isDark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.92f)
-        FoxyUiDesignStyle.BENTO_UI -> if (neu.isDark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.10f)
-        FoxyUiDesignStyle.EDITORIAL_DESIGN -> if (neu.isDark) Color.White.copy(alpha = 0.22f) else Color(0xFF18181B).copy(alpha = 0.24f)
-        FoxyUiDesignStyle.NEUMORPHISM -> if (neu.isDark) Color.White.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.6f)
-    }
+    val borderWidth = 1.dp
+    val borderColor = if (neu.isDark) Color(0xFF2D313B).copy(alpha = 0.72f) else Color.White.copy(alpha = 0.78f)
 
     Box(
         modifier = modifier
@@ -484,8 +304,8 @@ fun NeumorphicCard(
                 cornerRadius = effectiveCorner,
                 elevation = animatedElevation,
                 isPressed = isPressed,
-                lightShadowColor = neu.shadowLight.copy(alpha = if (neu.isDark) 0.3f else 0.85f),
-                darkShadowColor = neu.shadowDark.copy(alpha = if (neu.isDark) 0.7f else 0.45f),
+                lightShadowColor = neu.shadowLight.copy(alpha = if (neu.isDark) 0.50f else 0.90f),
+                darkShadowColor = neu.shadowDark.copy(alpha = if (neu.isDark) 0.85f else 0.55f),
                 designStyle = style,
                 isDark = neu.isDark,
                 accentColor = neu.accent,

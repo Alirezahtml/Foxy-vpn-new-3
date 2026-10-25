@@ -1,5 +1,9 @@
 package com.vauth.foxyvpn.ui.screens
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas as AndroidCanvas
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -387,44 +391,50 @@ fun HomeScreen(
                                 )
                             }
 
-                            // Top-Right Compact Controls: Active Skin Pill + Main Collapsible Magazine Button ("دکمه خشابی")
+                            // Top-Right Controls: Day/Night Theme Toggle + Settings Button right next to it + Collapsible Magazine Button
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                // Quick Telegram-Style Skin / Poster Switcher Pill
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .neumorphicTouchBounce()
-                                        .clip(RoundedCornerShape(50))
-                                        .background(neu.accent.copy(alpha = 0.14f))
-                                        .border(1.dp, neu.accent.copy(alpha = 0.34f), RoundedCornerShape(50))
-                                        .clickable {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            themeController.cycleUiDesignStyle()
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                // 1. Day/Night Theme Toggle Button (Telegram-Style Appearance Icon)
+                                val mode = themeController.mode
+                                NeumorphicIconButton(
+                                    size = 42.dp,
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        themeController.toggle(systemInDarkTheme)
+                                    },
+                                    modifier = Modifier.neumorphicTouchBounce(),
                                 ) {
                                     TelegramThemeAppearanceIcon(
-                                        tint = neu.accent,
-                                        modifier = Modifier.size(15.dp),
-                                    )
-                                    Spacer(Modifier.width(5.dp))
-                                    Text(
-                                        text = themeController.uiDesignStyle.localizedLabel(s.language),
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = fonts.headingFont,
-                                            fontWeight = FontWeight.ExtraBold,
-                                        ),
-                                        color = neu.accent,
-                                        maxLines = 1,
+                                        tint = if (mode == ThemeMode.LIGHT) Color(0xFFFF5E1A) else neu.accent,
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .graphicsLayer { rotationZ = themeIconRotation },
                                     )
                                 }
 
-                                // Main Collapsible Magazine Action Button ("دکمه اصلی خشابی")
+                                // 2. Settings Icon Button right next to Day/Night Theme Button
                                 NeumorphicIconButton(
-                                    size = 44.dp,
+                                    size = 42.dp,
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        isMagazineOpen = false
+                                        onOpenSettings()
+                                    },
+                                    modifier = Modifier.neumorphicTouchBounce(),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = s.headerSettingsButton,
+                                        tint = neu.textPrimary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+
+                                // 3. Main Collapsible Magazine Action Button ("دکمه خشابی")
+                                NeumorphicIconButton(
+                                    size = 42.dp,
                                     onClick = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         isMagazineOpen = !isMagazineOpen
@@ -444,7 +454,7 @@ fun HomeScreen(
                         }
                     }
 
-                    // Collapsible Magazine Action Bar ("خشاب ابزار و شخصی‌سازی با انیمیشن نرم")
+                    // Collapsible Magazine Action Bar ("خشاب ابزار با انیمیشن نرم")
                     AnimatedVisibility(
                         visible = isMagazineOpen,
                         enter = expandVertically(
@@ -482,67 +492,15 @@ fun HomeScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp, vertical = 10.dp),
                                 ) {
-                                    // Compact Single-Row Magazine Action Buttons Capsule ("خشاب دکمه‌های اصلی")
+                                    // Compact Single-Row Magazine Action Buttons Capsule ("خشاب دکمه‌های ابزار")
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        // Control 1: Telegram-Style Theme Mode Toggle (System / Light / Dark)
-                                        val mode = themeController.mode
-                                        NeumorphicIconButton(
-                                            size = 42.dp,
-                                            onClick = {
-                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                themeController.toggle(systemInDarkTheme)
-                                            },
-                                            modifier = Modifier.neumorphicTouchBounce(),
-                                        ) {
-                                            TelegramThemeAppearanceIcon(
-                                                tint = if (mode == ThemeMode.LIGHT) Color(0xFFF59E0B) else neu.accent,
-                                                modifier = Modifier
-                                                    .size(20.dp)
-                                                    .graphicsLayer { rotationZ = themeIconRotation },
-                                            )
-                                        }
-
-                                        // Control 2: UI Design Skin Cycle
-                                        NeumorphicIconButton(
-                                            size = 42.dp,
-                                            onClick = {
-                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                themeController.cycleUiDesignStyle()
-                                            },
-                                            modifier = Modifier.neumorphicTouchBounce(),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Layers,
-                                                contentDescription = s.uiDesignStyleTitle,
-                                                tint = neu.accent,
-                                                modifier = Modifier.size(19.dp),
-                                            )
-                                        }
-
-                                        // Control 3: Color Palette Quick Switcher
-                                        NeumorphicIconButton(
-                                            size = 42.dp,
-                                            onClick = {
-                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                themeController.cycleColorTheme()
-                                            },
-                                            modifier = Modifier.neumorphicTouchBounce(),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Palette,
-                                                contentDescription = s.colorPaletteTitle,
-                                                tint = neu.accent,
-                                                modifier = Modifier.size(19.dp),
-                                            )
-                                        }
-
-                                        // Control 4: Connection Wave Animation Switcher
+                                        // Control 1: Connection Wave Animation Switcher
                                         NeumorphicIconButton(
                                             size = 42.dp,
                                             onClick = {
@@ -559,7 +517,7 @@ fun HomeScreen(
                                             )
                                         }
 
-                                        // Control 5: Speed Test
+                                        // Control 2: Speed Test
                                         NeumorphicIconButton(
                                             size = 42.dp,
                                             onClick = {
@@ -577,7 +535,7 @@ fun HomeScreen(
                                             )
                                         }
 
-                                        // Control 6: Animated Language Switcher (EN -> فا -> عر)
+                                        // Control 3: Animated Language Switcher (EN -> فا -> عر)
                                         NeumorphicIconButton(
                                             size = 42.dp,
                                             onClick = {
@@ -604,24 +562,6 @@ fun HomeScreen(
                                                     maxLines = 1,
                                                 )
                                             }
-                                        }
-
-                                        // Control 7: Settings
-                                        NeumorphicIconButton(
-                                            size = 42.dp,
-                                            onClick = {
-                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                isMagazineOpen = false
-                                                onOpenSettings()
-                                            },
-                                            modifier = Modifier.neumorphicTouchBounce(),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Settings,
-                                                contentDescription = s.headerSettingsButton,
-                                                tint = neu.textPrimary,
-                                                modifier = Modifier.size(19.dp),
-                                            )
                                         }
                                     }
                                 }
@@ -1771,12 +1711,36 @@ private fun WorldRouteMapCard(
 
             Spacer(Modifier.height(12.dp))
 
-            // Stylized World Map Canvas with Origin -> Exit Animated Bezier Arc
+            // Real Google Maps Global Tunnel Route Viewport (Fetched live from Google Maps Tile Servers + Web Mercator Projection)
+            var useSatelliteLayer by remember(neu.isDark) { mutableStateOf(neu.isDark) }
+            val hlCode = when (s.language) {
+                FoxyLanguage.FA -> "fa"
+                FoxyLanguage.AR -> "ar"
+                FoxyLanguage.EN -> "en"
+            }
+            val googleMapLayer = if (useSatelliteLayer) "y" else "m"
+            val mapCacheKey = "$googleMapLayer-$hlCode"
+            var googleWorldBitmap by remember(mapCacheKey) {
+                mutableStateOf(GoogleWorldMapTileCache.get(mapCacheKey))
+            }
+
+            LaunchedEffect(mapCacheKey) {
+                if (googleWorldBitmap == null) {
+                    val fetched = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        fetchGoogleWorldMapBitmap(layer = googleMapLayer, hl = hlCode)
+                    }
+                    if (fetched != null) {
+                        GoogleWorldMapTileCache.put(mapCacheKey, fetched)
+                        googleWorldBitmap = fetched
+                    }
+                }
+            }
+
             val mapShape = RoundedCornerShape(16.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(132.dp)
+                    .height(156.dp)
                     .neumorphicSunken(
                         shape = mapShape,
                         cornerRadius = 16.dp,
@@ -1785,50 +1749,36 @@ private fun WorldRouteMapCard(
                     )
                     .clip(mapShape),
             ) {
+                val loadedBitmap = googleWorldBitmap
+                if (loadedBitmap != null) {
+                    Image(
+                        bitmap = loadedBitmap,
+                        contentDescription = "Google World Map",
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // Subtle readability tint overlay so the encrypted tunnel arc & pins pop vividly on top of Google Maps
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                if (useSatelliteLayer) Color(0xFF0B101B).copy(alpha = 0.22f)
+                                else Color(0xFF0F172A).copy(alpha = 0.06f)
+                            ),
+                    )
+                }
+
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
 
-                    // Subtle Latitude & Longitude Grid
-                    val gridColor = neu.textSecondary.copy(alpha = 0.10f)
-                    for (i in 1..4) {
-                        val y = h * (i / 5f)
-                        drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
-                    }
-                    for (i in 1..7) {
-                        val x = w * (i / 8f)
-                        drawLine(gridColor, Offset(x, 0f), Offset(x, h), strokeWidth = 1f)
-                    }
-
-                    // Stylized World Landmass Dot Matrix (North America, Europe, Middle East, Asia, etc.)
-                    val landDotColor = neu.textSecondary.copy(alpha = 0.18f)
-                    val landClusters = listOf(
-                        // North America
-                        Offset(0.18f, 0.34f), Offset(0.22f, 0.38f), Offset(0.26f, 0.42f), Offset(0.15f, 0.40f),
-                        // South America
-                        Offset(0.29f, 0.66f), Offset(0.32f, 0.74f), Offset(0.30f, 0.82f),
-                        // Europe
-                        Offset(0.47f, 0.28f), Offset(0.50f, 0.31f), Offset(0.53f, 0.29f), Offset(0.49f, 0.35f), Offset(0.52f, 0.34f),
-                        // Middle East & Africa
-                        Offset(0.58f, 0.43f), Offset(0.61f, 0.45f), Offset(0.52f, 0.54f), Offset(0.55f, 0.65f),
-                        // Asia & Oceania
-                        Offset(0.68f, 0.36f), Offset(0.74f, 0.40f), Offset(0.79f, 0.46f), Offset(0.83f, 0.38f), Offset(0.82f, 0.74f),
-                    )
-                    landClusters.forEach { pt ->
-                        drawCircle(
-                            color = landDotColor,
-                            radius = 11.dp.toPx(),
-                            center = Offset(pt.x * w, pt.y * h),
-                        )
-                    }
-
-                    val originNorm = countryCodeToMapNorm(originCountryCode)
-                    val exitNorm = countryCodeToMapNorm(exitCountryCode)
+                    val originNorm = countryCodeToMercatorNorm(originCountryCode)
+                    val exitNorm = countryCodeToMercatorNorm(exitCountryCode)
                     val startPt = Offset(originNorm.x * w, originNorm.y * h)
                     val endPt = Offset(exitNorm.x * w, exitNorm.y * h)
 
                     val midX = (startPt.x + endPt.x) * 0.5f
-                    val arcLift = (kotlin.math.abs(endPt.x - startPt.x) * 0.34f).coerceIn(26.dp.toPx(), 64.dp.toPx())
+                    val arcLift = (kotlin.math.abs(endPt.x - startPt.x) * 0.32f).coerceIn(22.dp.toPx(), 58.dp.toPx())
                     val controlPt = Offset(midX, (minOf(startPt.y, endPt.y) - arcLift).coerceAtLeast(12.dp.toPx()))
 
                     val arcPath = Path().apply {
@@ -1839,62 +1789,121 @@ private fun WorldRouteMapCard(
                     // Outer Glow of Route Arc
                     drawPath(
                         path = arcPath,
-                        color = routeColor.copy(alpha = if (isConnected) 0.26f else 0.14f),
-                        style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round),
+                        color = routeColor.copy(alpha = if (isConnected) 0.38f else 0.22f),
+                        style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
                     )
 
                     // Dashed or Solid Main Route Arc
                     drawPath(
                         path = arcPath,
-                        color = routeColor.copy(alpha = if (isConnected) 0.90f else 0.55f),
+                        color = routeColor,
                         style = Stroke(
-                            width = 2.2.dp.toPx(),
+                            width = 2.6.dp.toPx(),
                             cap = StrokeCap.Round,
                             pathEffect = if (isConnected) null else PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f),
                         ),
                     )
 
-                    // Animated Data Packet traveling from Origin to Exit along Quadratic Bezier
+                    // Animated Data Packet traveling from Origin to Exit along Geodesic Bezier
                     if (isConnected || isConnecting) {
                         val t = packetProgress
                         val invT = 1f - t
                         val pktX = invT * invT * startPt.x + 2f * invT * t * controlPt.x + t * t * endPt.x
                         val pktY = invT * invT * startPt.y + 2f * invT * t * controlPt.y + t * t * endPt.y
                         drawCircle(
-                            color = routeColor.copy(alpha = 0.35f),
-                            radius = 8.dp.toPx(),
+                            color = routeColor.copy(alpha = 0.45f),
+                            radius = 9.dp.toPx(),
                             center = Offset(pktX, pktY),
                         )
                         drawCircle(
                             color = Color.White,
-                            radius = 3.6.dp.toPx(),
+                            radius = 4.dp.toPx(),
                             center = Offset(pktX, pktY),
                         )
                     }
 
-                    // Origin Node
+                    // Origin Node Pin
                     drawCircle(
-                        color = neu.textSecondary.copy(alpha = 0.28f * pulseRadius),
-                        radius = 10.dp.toPx() * pulseRadius,
+                        color = Color(0xFFFF5E1A).copy(alpha = 0.35f * pulseRadius),
+                        radius = 11.dp.toPx() * pulseRadius,
                         center = startPt,
                     )
                     drawCircle(
-                        color = neu.textPrimary,
-                        radius = 4.5.dp.toPx(),
+                        color = Color.White,
+                        radius = 5.5.dp.toPx(),
+                        center = startPt,
+                    )
+                    drawCircle(
+                        color = Color(0xFFFF5E1A),
+                        radius = 3.8.dp.toPx(),
                         center = startPt,
                     )
 
-                    // Exit Server Node
+                    // Exit Server Node Pin
                     drawCircle(
-                        color = routeColor.copy(alpha = 0.32f * pulseRadius),
-                        radius = 12.dp.toPx() * pulseRadius,
+                        color = routeColor.copy(alpha = 0.38f * pulseRadius),
+                        radius = 13.dp.toPx() * pulseRadius,
+                        center = endPt,
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        radius = 6.5.dp.toPx(),
                         center = endPt,
                     )
                     drawCircle(
                         color = routeColor,
-                        radius = 5.5.dp.toPx(),
+                        radius = 4.6.dp.toPx(),
                         center = endPt,
                     )
+                }
+
+                // Google Maps Layer Switcher Pill (Satellite / Map) + Google Maps Attribution
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomBetweenRowAlignment)
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.Black.copy(alpha = 0.58f))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "Google Maps",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = fonts.headingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                            ),
+                            color = Color.White.copy(alpha = 0.92f),
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.62f))
+                            .clickable { useSatelliteLayer = !useSatelliteLayer }
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            text = if (useSatelliteLayer) {
+                                if (s.language == FoxyLanguage.FA) "ماهواره گوگل" else "Satellite"
+                            } else {
+                                if (s.language == FoxyLanguage.FA) "نقشه گوگل" else "Map"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = fonts.headingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                            ),
+                            color = Color.White,
+                        )
+                    }
                 }
             }
 
@@ -1982,28 +1991,100 @@ private fun WorldRouteMapCard(
     }
 }
 
-private fun countryCodeToMapNorm(code: String): Offset = when (code.uppercase()) {
-    "US" -> Offset(0.21f, 0.39f)
-    "CA" -> Offset(0.20f, 0.28f)
-    "BR" -> Offset(0.32f, 0.72f)
-    "GB", "UK" -> Offset(0.46f, 0.29f)
-    "FR" -> Offset(0.48f, 0.34f)
-    "NL" -> Offset(0.49f, 0.30f)
-    "DE" -> Offset(0.51f, 0.31f)
-    "CH" -> Offset(0.50f, 0.35f)
-    "AT" -> Offset(0.52f, 0.35f)
-    "IT" -> Offset(0.51f, 0.39f)
-    "ES" -> Offset(0.45f, 0.39f)
-    "SE", "NO" -> Offset(0.52f, 0.22f)
-    "FI" -> Offset(0.55f, 0.21f)
-    "PL", "CZ", "RO" -> Offset(0.54f, 0.32f)
-    "TR" -> Offset(0.57f, 0.39f)
-    "IR" -> Offset(0.62f, 0.43f)
-    "AE" -> Offset(0.62f, 0.49f)
-    "SG" -> Offset(0.76f, 0.58f)
-    "JP" -> Offset(0.85f, 0.39f)
-    "HK" -> Offset(0.79f, 0.47f)
-    "AU" -> Offset(0.83f, 0.76f)
-    else -> Offset(0.51f, 0.32f)
+private val Alignment.Companion.BottomBetweenRowAlignment: Alignment
+    get() = Alignment.BottomCenter
+
+private object GoogleWorldMapTileCache {
+    private val map = java.util.concurrent.ConcurrentHashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+    fun get(key: String) = map[key]
+    fun put(key: String, bmp: androidx.compose.ui.graphics.ImageBitmap) {
+        map[key] = bmp
+    }
+}
+
+private const val GOOGLE_WORLD_CROP_Y_TOP = 210
+private const val GOOGLE_WORLD_CROP_HEIGHT = 548
+
+private fun fetchGoogleWorldMapBitmap(
+    layer: String,
+    hl: String,
+): androidx.compose.ui.graphics.ImageBitmap? {
+    return runCatching {
+        val fullSize = 1024
+        val tileSize = 256
+        val fullBitmap = Bitmap.createBitmap(fullSize, fullSize, Bitmap.Config.ARGB_8888)
+        val canvas = AndroidCanvas(fullBitmap)
+        var anyTileLoaded = false
+
+        for (ty in 0..3) {
+            for (tx in 0..3) {
+                val tileUrl = "https://mt1.google.com/vt/lyrs=$layer&x=$tx&y=$ty&z=2&hl=$hl"
+                runCatching {
+                    val conn = (java.net.URL(tileUrl).openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 5000
+                        readTimeout = 5000
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Android; FoxyVPN/1.0.8)")
+                    }
+                    conn.inputStream.use { stream ->
+                        val tileBmp = BitmapFactory.decodeStream(stream)
+                        if (tileBmp != null) {
+                            canvas.drawBitmap(tileBmp, (tx * tileSize).toFloat(), (ty * tileSize).toFloat(), null)
+                            anyTileLoaded = true
+                        }
+                    }
+                    conn.disconnect()
+                }
+            }
+        }
+
+        if (!anyTileLoaded) return@runCatching null
+        val cropped = Bitmap.createBitmap(
+            fullBitmap,
+            0,
+            GOOGLE_WORLD_CROP_Y_TOP,
+            fullSize,
+            GOOGLE_WORLD_CROP_HEIGHT,
+        )
+        cropped.asImageBitmap()
+    }.getOrNull()
+}
+
+private fun countryCodeToMercatorNorm(code: String): Offset {
+    val (latDeg, lonDeg) = when (code.uppercase()) {
+        "US" -> 38.9072 to -77.0369
+        "CA" -> 56.1304 to -106.3468
+        "BR" -> -15.7975 to -47.8919
+        "GB", "UK" -> 51.5074 to -0.1278
+        "FR" -> 48.8566 to 2.3522
+        "NL" -> 52.3676 to 4.9041
+        "DE" -> 51.1657 to 10.4515
+        "CH" -> 46.8182 to 8.2275
+        "AT" -> 47.5162 to 14.5501
+        "IT" -> 41.8719 to 12.5674
+        "ES" -> 40.4637 to -3.7492
+        "SE" -> 60.1282 to 18.6435
+        "NO" -> 60.4720 to 8.4689
+        "FI" -> 61.9241 to 25.7482
+        "PL" -> 51.9194 to 19.1451
+        "CZ" -> 49.8175 to 15.4730
+        "RO" -> 45.9432 to 24.9668
+        "TR" -> 38.9637 to 35.2433
+        "IR" -> 32.4279 to 53.6880
+        "AE" -> 23.4241 to 53.8478
+        "IN" -> 20.5937 to 78.9629
+        "SG" -> 1.3521 to 103.8198
+        "JP" -> 36.2048 to 138.2529
+        "HK" -> 22.3193 to 114.1694
+        "KR" -> 35.9078 to 127.7669
+        "AU" -> -25.2744 to 133.7751
+        "RU" -> 55.7558 to 37.6173
+        else -> 51.1657 to 10.4515
+    }
+    val mercX = ((lonDeg + 180.0) / 360.0) * 1024.0
+    val latRad = Math.toRadians(latDeg.coerceIn(-80.0, 80.0))
+    val mercY = ((1.0 - kotlin.math.ln(kotlin.math.tan(latRad) + 1.0 / kotlin.math.cos(latRad)) / Math.PI) / 2.0) * 1024.0
+    val normX = (mercX / 1024.0).toFloat().coerceIn(0.03f, 0.97f)
+    val normY = ((mercY - GOOGLE_WORLD_CROP_Y_TOP) / GOOGLE_WORLD_CROP_HEIGHT.toDouble()).toFloat().coerceIn(0.06f, 0.94f)
+    return Offset(normX, normY)
 }
 
