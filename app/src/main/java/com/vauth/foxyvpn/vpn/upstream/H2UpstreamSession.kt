@@ -430,11 +430,11 @@ class H2UpstreamSession(
                             if (evt is SslHandshakeCompletionEvent) {
                                 if (evt.isSuccess) {
                                     val negotiated = sslHandler.applicationProtocol()
-                                    negotiatedProtocolBadge = when (protocolMode) {
-                                        ConnectionProtocolMode.HTTP3_QUIC -> "H3/QUIC"
-                                        ConnectionProtocolMode.HTTP2_TCP -> "H2/TCP"
-                                        ConnectionProtocolMode.HTTP11_TLS -> "H1.1/TLS"
-                                        ConnectionProtocolMode.AUTO -> "AUTO (H2)"
+                                    negotiatedProtocolBadge = when {
+                                        negotiated == ApplicationProtocolNames.HTTP_1_1 -> "H1.1/TLS"
+                                        protocolMode == ConnectionProtocolMode.HTTP11_TLS -> "H2/TLS-Compat"
+                                        protocolMode == ConnectionProtocolMode.HTTP2_TCP -> "H2/TCP"
+                                        else -> "AUTO (H2/TCP)"
                                     }
                                     AppLogger.i(
                                         TAG,

@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -262,6 +263,19 @@ fun SettingsScreen(
     var smartPingAutoSwitch by remember { mutableStateOf(settingsStore.smartPingAutoSwitch) }
     var autoConnectOnLaunch by remember { mutableStateOf(settingsStore.autoConnectOnLaunch) }
     var stealthNotificationEnabled by remember { mutableStateOf(settingsStore.stealthNotificationEnabled) }
+
+    // Deep Dynamic Island Micro-Detail states
+    var islandCollapsedHeightDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandCollapsedHeightDp.toFloat()) }
+    var islandExpandedWidthPct by remember { mutableFloatStateOf(settingsStore.dynamicIslandExpandedWidthPercent.toFloat()) }
+    var islandFontScalePct by remember { mutableFloatStateOf(settingsStore.dynamicIslandFontScalePercent.toFloat()) }
+    var islandBorderWidthDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandBorderWidthDp) }
+    var islandShadowDepthDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandShadowDepthDp.toFloat()) }
+    var islandSpringDampingPct by remember { mutableFloatStateOf(settingsStore.dynamicIslandSpringDampingPercent.toFloat()) }
+    var islandSpringStiffness by remember { mutableFloatStateOf(settingsStore.dynamicIslandSpringStiffness.toFloat()) }
+    var islandQuickAppIconDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandQuickAppIconSizeDp.toFloat()) }
+    var islandShowAppNames by remember { mutableStateOf(settingsStore.dynamicIslandShowAppNames) }
+    var islandDoubleTapAction by remember { mutableStateOf(settingsStore.dynamicIslandDoubleTapAction) }
+    var mtuModeAuto by remember { mutableStateOf(settingsStore.mtuModeAuto) }
 
     // Dialog toggles
     var showDnsProviderDialog by remember { mutableStateOf(false) }
@@ -592,33 +606,33 @@ fun SettingsScreen(
         when (cat) {
             SettingsCategory.APPEARANCE_WAVES -> when (s.language) {
                 AppLanguage.FA -> "زبان، تم و استودیو امواج"
-                AppLanguage.AR -> "اللغة والمظهر واستوديو الموجات"
-                AppLanguage.EN -> "Language, Theme & Wave Studio"
+                AppLanguage.AR -> "اللغة والمظهر والموجات"
+                AppLanguage.EN -> "Theme & Wave Studio"
             }
             SettingsCategory.DYNAMIC_ISLAND -> when (s.language) {
-                AppLanguage.FA -> "داینامیک آیلند و پیش‌نمایش زنده"
-                AppLanguage.AR -> "الجزيرة الديناميكية والمعاينة الحية"
-                AppLanguage.EN -> "Dynamic Island & Live Preview"
+                AppLanguage.FA -> "شخصی‌سازی داینامیک آیلند"
+                AppLanguage.AR -> "تخصيص الجزيرة التفاعلية"
+                AppLanguage.EN -> "Dynamic Island Studio"
             }
             SettingsCategory.PROTOCOL_NETWORK -> when (s.language) {
-                AppLanguage.FA -> "پروتکل اتصال، DNS و شبکه"
-                AppLanguage.AR -> "بروتوكول الاتصال والشبكة"
-                AppLanguage.EN -> "Connection Protocol & Network"
+                AppLanguage.FA -> "پروتکل، امنیت و شبکه"
+                AppLanguage.AR -> "البروتوكول والأمان والشبكة"
+                AppLanguage.EN -> "Protocol, Security & Network"
             }
             SettingsCategory.SPEED_AUTOMATION -> when (s.language) {
-                AppLanguage.FA -> "بوستر سرعت و اتوماسیون"
-                AppLanguage.AR -> "معزز السرعة والأتمتة"
-                AppLanguage.EN -> "Speed Booster & Automation"
+                AppLanguage.FA -> "بوستر سرعت و پایداری"
+                AppLanguage.AR -> "معزز السرعة والاستقرار"
+                AppLanguage.EN -> "Speed Booster & Stability"
             }
             SettingsCategory.SMART_TOOLKIT -> when (s.language) {
-                AppLanguage.FA -> "جعبه ابزار هوشمند و امنیت"
+                AppLanguage.FA -> "ابزارهای شبکه و امنیت"
                 AppLanguage.AR -> "أدوات الشبكة والأمان"
-                AppLanguage.EN -> "Smart Network & Security Toolkit"
+                AppLanguage.EN -> "Network & Security Toolkit"
             }
             SettingsCategory.ACCOUNTS_ABOUT -> when (s.language) {
                 AppLanguage.FA -> "مدیریت حساب‌ها و درباره"
                 AppLanguage.AR -> "إدارة الحسابات وحول التطبيق"
-                AppLanguage.EN -> "Accounts, Mozilla & About"
+                AppLanguage.EN -> "Accounts & About"
             }
         }
     }
@@ -626,78 +640,83 @@ fun SettingsScreen(
     val subPageTitles: List<String> = when (selectedCategory) {
         SettingsCategory.APPEARANCE_WAVES -> listOf(
             when (s.language) {
-                AppLanguage.FA -> "۱. زبان، تم و سبک موج"
-                AppLanguage.AR -> "١. اللغة ونمط الموجة"
-                AppLanguage.EN -> "1. Language & Wave Style"
+                AppLanguage.FA -> "زبان و سبک موج"
+                AppLanguage.AR -> "اللغة والموجة"
+                AppLanguage.EN -> "Theme & Wave"
             },
             when (s.language) {
-                AppLanguage.FA -> "۲. استودیو حرفه‌ای امواج"
-                AppLanguage.AR -> "٢. استوديو الموجات الاحترافي"
-                AppLanguage.EN -> "2. Pro Wave Studio"
+                AppLanguage.FA -> "استودیو امواج"
+                AppLanguage.AR -> "استوديو الموجات"
+                AppLanguage.EN -> "Wave Studio"
             },
         )
         SettingsCategory.DYNAMIC_ISLAND -> listOf(
             when (s.language) {
-                AppLanguage.FA -> "۱. پایه و ابعاد"
-                AppLanguage.AR -> "١. الأساسيات والحجم"
-                AppLanguage.EN -> "1. Core & Scale"
+                AppLanguage.FA -> "پایه و ابعاد"
+                AppLanguage.AR -> "الحجم"
+                AppLanguage.EN -> "Core"
             },
             when (s.language) {
-                AppLanguage.FA -> "۲. ظاهر و انیمیشن"
-                AppLanguage.AR -> "٢. المظهر والحركة"
-                AppLanguage.EN -> "2. Style & Motion"
+                AppLanguage.FA -> "ظاهر و حرکت"
+                AppLanguage.AR -> "الحركة"
+                AppLanguage.EN -> "Motion"
             },
             when (s.language) {
-                AppLanguage.FA -> "۳. امواج و برنامه‌ها"
-                AppLanguage.AR -> "٣. الموجات والتطبيقات"
-                AppLanguage.EN -> "3. Waves & Apps"
+                AppLanguage.FA -> "امواج و اپ‌ها"
+                AppLanguage.AR -> "التطبيقات"
+                AppLanguage.EN -> "Apps"
             },
             when (s.language) {
-                AppLanguage.FA -> "۴. نشانگرها و حسگر"
-                AppLanguage.AR -> "٤. المؤشرات واللمس"
-                AppLanguage.EN -> "4. Badges & Haptics"
+                AppLanguage.FA -> "نشانگرها"
+                AppLanguage.AR -> "المؤشرات"
+                AppLanguage.EN -> "Badges"
+            },
+            when (s.language) {
+                AppLanguage.FA -> "جزئیات عمیق"
+                AppLanguage.AR -> "تفاصيل دقيقة"
+                AppLanguage.EN -> "Deep Studio"
             },
         )
         SettingsCategory.PROTOCOL_NETWORK -> listOf(
             when (s.language) {
-                AppLanguage.FA -> "۱. پروتکل و تبلیغات"
-                AppLanguage.AR -> "١. البروتوكول والإعلانات"
-                AppLanguage.EN -> "1. Protocol & AdBlock"
+                AppLanguage.FA -> "پروتکل و امنیت"
+                AppLanguage.AR -> "البروتوكول"
+                AppLanguage.EN -> "Protocol"
             },
             when (s.language) {
-                AppLanguage.FA -> "۲. DNS و تفکیک ترافیک"
-                AppLanguage.AR -> "٢. DNS وتقسيم النفق"
-                AppLanguage.EN -> "2. DNS & Split Tunnel"
+                AppLanguage.FA -> "DNS و تفکیک"
+                AppLanguage.AR -> "DNS والنفق"
+                AppLanguage.EN -> "DNS & Split"
             },
             when (s.language) {
-                AppLanguage.FA -> "۳. پروکسی و پیشرفته"
-                AppLanguage.AR -> "٣. الوكيل والمتقدم"
-                AppLanguage.EN -> "3. Proxy & Advanced"
+                AppLanguage.FA -> "پروکسی"
+                AppLanguage.AR -> "الوكيل"
+                AppLanguage.EN -> "Proxy"
             },
         )
         SettingsCategory.SPEED_AUTOMATION -> listOf(
             when (s.language) {
-                AppLanguage.FA -> "۱. بوستر سرعت و باتری"
-                AppLanguage.AR -> "١. معزز السرعة والبطارية"
-                AppLanguage.EN -> "1. Speed & Battery"
+                AppLanguage.FA -> "سرعت و رام‌ها"
+                AppLanguage.AR -> "السرعة والنظام"
+                AppLanguage.EN -> "Speed & ROM"
             },
             when (s.language) {
-                AppLanguage.FA -> "۲. زمان‌بندی و اتوماسیون"
-                AppLanguage.AR -> "٢. الجدولة والأتمتة"
-                AppLanguage.EN -> "2. Schedule & Rules"
+                AppLanguage.FA -> "اتوماسیون"
+                AppLanguage.AR -> "الأتمتة"
+                AppLanguage.EN -> "Automation"
             },
         )
         SettingsCategory.SMART_TOOLKIT -> emptyList()
         SettingsCategory.ACCOUNTS_ABOUT -> listOf(
             when (s.language) {
-                AppLanguage.FA -> "۱. حساب‌ها و سایت موزیلا"
-                AppLanguage.AR -> "١. الحسابات وموقع موزيلا"
-                AppLanguage.EN -> "1. Accounts & Mozilla"
+                AppLanguage.FA -> "مدیریت اکانت"
+                AppLanguage.AR -> "الحسابات"
+                AppLanguage.EN -> "Accounts"
             },
             when (s.language) {
-                AppLanguage.FA -> "۲. گزارش‌ها و ارتباط"
-                AppLanguage.AR -> "٢. السجلات والتواصل"
-                AppLanguage.EN -> "2. Logs & Social"
+                AppLanguage.FA -> "گزارش و ارتباط"
+                AppLanguage.AR -> "السجلات"
+                AppLanguage.EN -> "Logs & Info"
             },
         )
         null -> emptyList()
@@ -722,20 +741,21 @@ fun SettingsScreen(
                         Text(
                             text = if (selectedCategory == null) {
                                 when (s.language) {
-                                    AppLanguage.FA -> "چیدمان صفحه‌ای دسته‌بندی‌شده (بدون اسکرول)"
-                                    AppLanguage.AR -> "تصميم صفحات مقسمة بدون تمرير"
-                                    AppLanguage.EN -> "Paginated Category Hub (Zero-Scroll)"
+                                    AppLanguage.FA -> "دسته‌بندی صفحه‌ای منظم"
+                                    AppLanguage.AR -> "تصميم صفحات منظمة"
+                                    AppLanguage.EN -> "Paginated Category Hub"
                                 }
                             } else {
                                 when (s.language) {
-                                    AppLanguage.FA -> "برای بازگشت به دسته‌بندی‌ها دکمه برگشت را بزنید"
+                                    AppLanguage.FA -> "بازگشت به همه دسته‌ها با دکمه برگشت"
                                     AppLanguage.AR -> "اضغط رجوع للعودة إلى الفئات"
-                                    AppLanguage.EN -> "Tap back to return to Category Hub"
+                                    AppLanguage.EN -> "Tap back for all categories"
                                 }
                             },
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.bodyFont),
                             color = neu.textSecondary,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 },
@@ -758,34 +778,6 @@ fun SettingsScreen(
                             tint = neu.textPrimary,
                             modifier = Modifier.size(18.dp),
                         )
-                    }
-                },
-                actions = {
-                    if (selectedCategory != null) {
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 12.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(neu.accent.copy(alpha = 0.14f))
-                                .clickable {
-                                    selectedCategory = null
-                                    selectedSubPage = 0
-                                }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                text = when (s.language) {
-                                    AppLanguage.FA -> "همه دسته‌ها"
-                                    AppLanguage.AR -> "كل الفئات"
-                                    AppLanguage.EN -> "All Categories"
-                                },
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = fonts.headingFont,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                                color = neu.accent,
-                            )
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = neu.background),
@@ -1025,8 +1017,12 @@ fun SettingsScreen(
                                     }
                                 }
 
-                                // Page Body Card (Non-Scrolling)
-                                Box(modifier = Modifier.weight(1f)) {
+                                // Page Body Card (Responsive container that never clips bottom rows on compact displays)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .verticalScroll(rememberScrollState()),
+                                ) {
                                     when (cat) {
                                         // -----------------------------------------------------------------
                                         // CATEGORY 1: APPEARANCE, LANGUAGE & PRO WAVE STUDIO
@@ -1561,11 +1557,15 @@ fun SettingsScreen(
                                                                     )
                                                                 }
                                                             }
-                                                            else -> {
-                                                                // Sub-page 3: Compact Telemetry Badges Grid (2-column non-scrolling switches)
+                                                            3 -> {
+                                                                // Sub-page 3: Compact Telemetry Badges Grid (Concise labels + scaled switches so zero text truncates)
                                                                 val badgeItems = listOf(
                                                                     Triple(
-                                                                        s.islandShowSpeedTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "سرعت لحظه‌ای"
+                                                                            AppLanguage.AR -> "السرعة الحية"
+                                                                            AppLanguage.EN -> "Live Speed"
+                                                                        },
                                                                         dynamicIslandShowSpeed,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowSpeed = v
@@ -1573,7 +1573,11 @@ fun SettingsScreen(
                                                                         },
                                                                     ),
                                                                     Triple(
-                                                                        s.islandShowPingTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "پینگ سرور"
+                                                                            AppLanguage.AR -> "بينج الخادم"
+                                                                            AppLanguage.EN -> "Server Ping"
+                                                                        },
                                                                         dynamicIslandShowPing,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowPing = v
@@ -1581,7 +1585,11 @@ fun SettingsScreen(
                                                                         },
                                                                     ),
                                                                     Triple(
-                                                                        s.islandShowFlagTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "پرچم کشور"
+                                                                            AppLanguage.AR -> "علم الدولة"
+                                                                            AppLanguage.EN -> "Country Flag"
+                                                                        },
                                                                         dynamicIslandShowFlag,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowFlag = v
@@ -1589,7 +1597,11 @@ fun SettingsScreen(
                                                                         },
                                                                     ),
                                                                     Triple(
-                                                                        s.islandShowServerNameTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "نام سرور"
+                                                                            AppLanguage.AR -> "اسم الخادم"
+                                                                            AppLanguage.EN -> "Server Name"
+                                                                        },
                                                                         dynamicIslandShowServerName,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowServerName = v
@@ -1597,7 +1609,11 @@ fun SettingsScreen(
                                                                         },
                                                                     ),
                                                                     Triple(
-                                                                        s.islandShowSessionDataTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "حجم مصرفی"
+                                                                            AppLanguage.AR -> "حجم البيانات"
+                                                                            AppLanguage.EN -> "Data Used"
+                                                                        },
                                                                         dynamicIslandShowSessionData,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowSessionData = v
@@ -1605,7 +1621,11 @@ fun SettingsScreen(
                                                                         },
                                                                     ),
                                                                     Triple(
-                                                                        s.islandShowIpBadgeTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "نشان پورت/IP"
+                                                                            AppLanguage.AR -> "شارة المنفذ"
+                                                                            AppLanguage.EN -> "Port/IP Tag"
+                                                                        },
                                                                         dynamicIslandShowIpBadge,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowIpBadge = v
@@ -1613,7 +1633,11 @@ fun SettingsScreen(
                                                                         },
                                                                     ),
                                                                     Triple(
-                                                                        s.islandShowTimerTitle,
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "تایمر اتصال"
+                                                                            AppLanguage.AR -> "مؤقت الاتصال"
+                                                                            AppLanguage.EN -> "Timer"
+                                                                        },
                                                                         dynamicIslandShowTimer,
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowTimer = v
@@ -1622,9 +1646,9 @@ fun SettingsScreen(
                                                                     ),
                                                                     Triple(
                                                                         when (s.language) {
-                                                                            AppLanguage.FA -> "نشان پروتکل فعال"
+                                                                            AppLanguage.FA -> "نشان پروتکل"
                                                                             AppLanguage.AR -> "شارة البروتوكول"
-                                                                            AppLanguage.EN -> "Protocol Badge"
+                                                                            AppLanguage.EN -> "Protocol Tag"
                                                                         },
                                                                         dynamicIslandShowProtocolBadge,
                                                                         { v: Boolean ->
@@ -1634,7 +1658,7 @@ fun SettingsScreen(
                                                                     ),
                                                                     Triple(
                                                                         when (s.language) {
-                                                                            AppLanguage.FA -> "تله‌متری فشرده"
+                                                                            AppLanguage.FA -> "حالت فشرده"
                                                                             AppLanguage.AR -> "وضع مضغوط"
                                                                             AppLanguage.EN -> "Compact Mode"
                                                                         },
@@ -1646,9 +1670,9 @@ fun SettingsScreen(
                                                                     ),
                                                                     Triple(
                                                                         when (s.language) {
-                                                                            AppLanguage.FA -> "لرزش لمسی (Haptic)"
+                                                                            AppLanguage.FA -> "لرزش لمسی"
                                                                             AppLanguage.AR -> "اهتزاز لمسي"
-                                                                            AppLanguage.EN -> "Haptic Feedback"
+                                                                            AppLanguage.EN -> "Haptic Touch"
                                                                         },
                                                                         dynamicIslandHapticEnabled,
                                                                         { v: Boolean ->
@@ -1670,7 +1694,7 @@ fun SettingsScreen(
                                                                                         .clip(RoundedCornerShape(12.dp))
                                                                                         .background(neu.surfaceElevated.copy(alpha = 0.65f))
                                                                                         .clickable { onToggle(!checked) }
-                                                                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                                                        .padding(horizontal = 10.dp, vertical = 4.dp),
                                                                                     verticalAlignment = Alignment.CenterVertically,
                                                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                                                 ) {
@@ -1685,6 +1709,7 @@ fun SettingsScreen(
                                                                                     Switch(
                                                                                         checked = checked,
                                                                                         onCheckedChange = onToggle,
+                                                                                        modifier = Modifier.scale(0.76f),
                                                                                         colors = SwitchDefaults.colors(
                                                                                             checkedThumbColor = Color.White,
                                                                                             checkedTrackColor = neu.accent,
@@ -1692,6 +1717,179 @@ fun SettingsScreen(
                                                                                     )
                                                                                 }
                                                                             }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            else -> {
+                                                                // Sub-page 4: Deep Micro-Detail Geometry, Physics & Double-Tap Studio
+                                                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "ارتفاع کپسول بسته (dp)"
+                                                                            AppLanguage.AR -> "ارتفاع الكبسولة (dp)"
+                                                                            AppLanguage.EN -> "Collapsed Height (dp)"
+                                                                        },
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Text(
+                                                                        text = "${islandCollapsedHeightDp.roundToInt()} dp",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                        color = neu.accent,
+                                                                    )
+                                                                }
+                                                                Slider(
+                                                                    value = islandCollapsedHeightDp,
+                                                                    onValueChange = {
+                                                                        islandCollapsedHeightDp = it
+                                                                        settingsStore.dynamicIslandCollapsedHeightDp = it.roundToInt()
+                                                                    },
+                                                                    valueRange = 32f..56f,
+                                                                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                )
+
+                                                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "پهنای کارت بازشده (%)"
+                                                                            AppLanguage.AR -> "عرض البطاقة الموسعة (%)"
+                                                                            AppLanguage.EN -> "Expanded Sheet Width (%)"
+                                                                        },
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Text(
+                                                                        text = "${islandExpandedWidthPct.roundToInt()}%",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                        color = neu.accent,
+                                                                    )
+                                                                }
+                                                                Slider(
+                                                                    value = islandExpandedWidthPct,
+                                                                    onValueChange = {
+                                                                        islandExpandedWidthPct = it
+                                                                        settingsStore.dynamicIslandExpandedWidthPercent = it.roundToInt()
+                                                                    },
+                                                                    valueRange = 82f..100f,
+                                                                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                )
+
+                                                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "ضخامت کادر / عمق سایه"
+                                                                            AppLanguage.AR -> "سمك الإطار / عمق الظل"
+                                                                            AppLanguage.EN -> "Border Width / 3D Shadow"
+                                                                        },
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Text(
+                                                                        text = "${String.format(java.util.Locale.US, "%.1f", islandBorderWidthDp)}dp • ${islandShadowDepthDp.roundToInt()}dp",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                        color = neu.accent,
+                                                                    )
+                                                                }
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Slider(
+                                                                        value = islandBorderWidthDp,
+                                                                        onValueChange = {
+                                                                            islandBorderWidthDp = it
+                                                                            settingsStore.dynamicIslandBorderWidthDp = it
+                                                                        },
+                                                                        valueRange = 0.5f..3.0f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                    Slider(
+                                                                        value = islandShadowDepthDp,
+                                                                        onValueChange = {
+                                                                            islandShadowDepthDp = it
+                                                                            settingsStore.dynamicIslandShadowDepthDp = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 0f..20f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                }
+
+                                                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "فیزیک فنر (نرمی / سرعت)"
+                                                                            AppLanguage.AR -> "فيزياء الزنبرك (النعومة / السرعة)"
+                                                                            AppLanguage.EN -> "Spring Physics (Damping / Stiffness)"
+                                                                        },
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textPrimary,
+                                                                    )
+                                                                    Text(
+                                                                        text = "${islandSpringDampingPct.roundToInt()}% • ${islandSpringStiffness.roundToInt()}",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                                                                        color = neu.accent,
+                                                                    )
+                                                                }
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Slider(
+                                                                        value = islandSpringDampingPct,
+                                                                        onValueChange = {
+                                                                            islandSpringDampingPct = it
+                                                                            settingsStore.dynamicIslandSpringDampingPercent = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 55f..95f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                    Slider(
+                                                                        value = islandSpringStiffness,
+                                                                        onValueChange = {
+                                                                            islandSpringStiffness = it
+                                                                            settingsStore.dynamicIslandSpringStiffness = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 180f..600f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                }
+
+                                                                Text(
+                                                                    text = when (s.language) {
+                                                                        AppLanguage.FA -> "عملیات دو بار ضربه (Double-Tap):"
+                                                                        AppLanguage.AR -> "إجراء النقر المزدوج:"
+                                                                        AppLanguage.EN -> "Double-Tap Action:"
+                                                                    },
+                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                    color = neu.textSecondary,
+                                                                )
+                                                                Spacer(Modifier.height(4.dp))
+                                                                FlowRow(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                                ) {
+                                                                    com.vauth.foxyvpn.data.DynamicIslandDoubleTapAction.entries.forEach { act ->
+                                                                        val isSel = islandDoubleTapAction == act
+                                                                        val lbl = when (s.language) {
+                                                                            AppLanguage.FA -> act.labelFa
+                                                                            AppLanguage.AR -> act.labelAr
+                                                                            AppLanguage.EN -> act.labelEn
+                                                                        }
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .clip(RoundedCornerShape(10.dp))
+                                                                                .background(if (isSel) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                                .clickable {
+                                                                                    islandDoubleTapAction = act
+                                                                                    settingsStore.dynamicIslandDoubleTapAction = act
+                                                                                }
+                                                                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                                                                        ) {
+                                                                            Text(
+                                                                                text = lbl,
+                                                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                color = if (isSel) Color.White else neu.textPrimary,
+                                                                            )
                                                                         }
                                                                     }
                                                                 }
@@ -1760,12 +1958,13 @@ fun SettingsScreen(
                                                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                                             ) {
                                                                 ConnectionProtocolMode.entries.forEach { mode ->
-                                                                    val isSelected = connectionProtocolMode == mode
+                                                                    val isSupported = mode.isSupported
+                                                                    val isSelected = isSupported && connectionProtocolMode == mode
                                                                     val label = when (mode) {
                                                                         ConnectionProtocolMode.AUTO -> when (s.language) {
-                                                                            AppLanguage.FA -> "هوشمند (H3 + H2)"
-                                                                            AppLanguage.AR -> "تلقائي ذكي (H3 + H2)"
-                                                                            AppLanguage.EN -> "Auto (HTTP/3 + HTTP/2)"
+                                                                            AppLanguage.FA -> "هوشمند (H2 + H1.1)"
+                                                                            AppLanguage.AR -> "تلقائي ذكي (H2 + H1.1)"
+                                                                            AppLanguage.EN -> "Auto (HTTP/2 + HTTP/1.1)"
                                                                         }
                                                                         ConnectionProtocolMode.HTTP2_TCP -> when (s.language) {
                                                                             AppLanguage.FA -> "HTTP/2 (TCP پایدار)"
@@ -1773,9 +1972,9 @@ fun SettingsScreen(
                                                                             AppLanguage.EN -> "HTTP/2 (TCP Multiplex)"
                                                                         }
                                                                         ConnectionProtocolMode.HTTP3_QUIC -> when (s.language) {
-                                                                            AppLanguage.FA -> "HTTP/3 (توربو QUIC)"
-                                                                            AppLanguage.AR -> "HTTP/3 (سريع QUIC)"
-                                                                            AppLanguage.EN -> "HTTP/3 (Turbo QUIC)"
+                                                                            AppLanguage.FA -> "HTTP/3 QUIC (غیرفعال — عدم پشتیبانی رله)"
+                                                                            AppLanguage.AR -> "HTTP/3 QUIC (غير مدعوم على المرحل)"
+                                                                            AppLanguage.EN -> "HTTP/3 QUIC (Disabled — Relay N/A)"
                                                                         }
                                                                         ConnectionProtocolMode.HTTP11_TLS -> when (s.language) {
                                                                             AppLanguage.FA -> "HTTP/1.1 + TLS ضد فیلتر"
@@ -1785,10 +1984,11 @@ fun SettingsScreen(
                                                                     }
                                                                     Box(
                                                                         modifier = Modifier
-                                                                            .neumorphicTouchBounce()
+                                                                            .then(if (isSupported) Modifier.neumorphicTouchBounce() else Modifier)
                                                                             .clip(RoundedCornerShape(12.dp))
                                                                             .background(
-                                                                                if (isSelected) neu.accent.copy(alpha = 0.16f)
+                                                                                if (!isSupported) neu.surfaceElevated.copy(alpha = 0.45f)
+                                                                                else if (isSelected) neu.accent.copy(alpha = 0.16f)
                                                                                 else neu.surfaceElevated,
                                                                             )
                                                                             .border(
@@ -1796,11 +1996,12 @@ fun SettingsScreen(
                                                                                 color = if (isSelected) neu.accent else neu.textSecondary.copy(alpha = 0.15f),
                                                                                 shape = RoundedCornerShape(12.dp),
                                                                             )
-                                                                            .clickable {
-                                                                                connectionProtocolMode = mode
-                                                                                settingsStore.connectionProtocolMode = mode
-                                                                                // Immediately switch active VPN tunnel to the selected protocol!
-                                                                                FoxyVpnService.switchProtocol(context, mode)
+                                                                            .clickable(enabled = isSupported) {
+                                                                                if (isSupported) {
+                                                                                    connectionProtocolMode = mode
+                                                                                    settingsStore.connectionProtocolMode = mode
+                                                                                    FoxyVpnService.switchProtocol(context, mode)
+                                                                                }
                                                                             }
                                                                             .padding(horizontal = 12.dp, vertical = 8.dp),
                                                                     ) {
@@ -1810,7 +2011,8 @@ fun SettingsScreen(
                                                                                 fontFamily = fonts.bodyFont,
                                                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                                             ),
-                                                                            color = if (isSelected) neu.accent else neu.textPrimary,
+                                                                            color = if (!isSupported) neu.textSecondary.copy(alpha = 0.50f)
+                                                                            else if (isSelected) neu.accent else neu.textPrimary,
                                                                         )
                                                                     }
                                                                 }
@@ -1849,11 +2051,47 @@ fun SettingsScreen(
                                                                     settingsStore.exitCheckEnabled = it
                                                                 },
                                                             )
-                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
                                                             SettingClickableRow(
                                                                 title = s.tunnelMtuTitle,
-                                                                value = s.mtuBytesValue(mtu),
+                                                                value = if (mtuModeAuto) "Auto (${s.mtuBytesValue(1400)})" else s.mtuBytesValue(mtu),
                                                                 onClick = { showMtuDialog = true },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingClickableRow(
+                                                                title = when (s.language) {
+                                                                    AppLanguage.FA -> "بازگردانی تنظیمات شبکه به مقادیر امن پیش‌فرض"
+                                                                    AppLanguage.AR -> "استعادة إعدادات الشبكة الآمنة الافتراضية"
+                                                                    AppLanguage.EN -> "Reset Network Tuning to Safe Defaults"
+                                                                },
+                                                                value = "Auto Safe",
+                                                                onClick = {
+                                                                    settingsStore.resetNetworkTuningToSafeDefaults()
+                                                                    mtuModeAuto = true
+                                                                    mtu = 1400
+                                                                    dnsProvider = settingsStore.dnsProvider
+                                                                    bootstrapDnsProvider = settingsStore.bootstrapDnsProvider
+                                                                    tlsSplitMode = settingsStore.tlsSplitMode
+                                                                    connectionProtocolMode = settingsStore.connectionProtocolMode
+                                                                },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                            SettingClickableRow(
+                                                                title = when (s.language) {
+                                                                    AppLanguage.FA -> "کیل‌سوئیچ و اتصال دائمی اندروید (Kill-Switch)"
+                                                                    AppLanguage.AR -> "مفتاح الإيقاف والاتصال الدائم (Kill-Switch)"
+                                                                    AppLanguage.EN -> "System Kill-Switch & Always-On VPN"
+                                                                },
+                                                                value = when (s.language) {
+                                                                    AppLanguage.FA -> "تنظیمات VPN سیستم"
+                                                                    AppLanguage.AR -> "إعدادات VPN للنظام"
+                                                                    AppLanguage.EN -> "Android VPN Settings"
+                                                                },
+                                                                onClick = {
+                                                                    runCatching {
+                                                                        context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+                                                                    }
+                                                                },
                                                             )
                                                         }
                                                         1 -> {
@@ -2032,7 +2270,7 @@ fun SettingsScreen(
                                                                 }
                                                             },
                                                         )
-                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
                                                         val canInstallPackages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                                             runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
                                                         } else {
@@ -2050,6 +2288,28 @@ fun SettingsScreen(
                                                                         )
                                                                         context.startActivity(intent)
                                                                     }
+                                                                }
+                                                            },
+                                                        )
+                                                        HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+                                                        SettingClickableRow(
+                                                            title = when (s.language) {
+                                                                AppLanguage.FA -> "محافظت پس‌زمینه رام‌ها (MIUI / OneUI / Android 10+)"
+                                                                AppLanguage.AR -> "حماية الخلفية للأنظمة (MIUI / OneUI)"
+                                                                AppLanguage.EN -> "OEM ROM Background Protection (Android 10+)"
+                                                            },
+                                                            value = when (s.language) {
+                                                                AppLanguage.FA -> "تنظیمات اجرای خودکار"
+                                                                AppLanguage.AR -> "إعدادات التشغيل التلقائي"
+                                                                AppLanguage.EN -> "App Info & Autostart"
+                                                            },
+                                                            onClick = {
+                                                                runCatching {
+                                                                    val intent = Intent(
+                                                                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                                        Uri.parse("package:${context.packageName}"),
+                                                                    )
+                                                                    context.startActivity(intent)
                                                                 }
                                                             },
                                                         )
@@ -2187,29 +2447,49 @@ fun SettingsScreen(
                                             NeumorphicCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(Modifier.padding(18.dp)) {
                                                     SettingClickableRow(
+                                                        title = when (s.language) {
+                                                            AppLanguage.FA -> "پروکسی مستقل تلگرام (SOCKS5)"
+                                                            AppLanguage.AR -> "بروكسي تيليجرام المستقل (SOCKS5)"
+                                                            AppLanguage.EN -> "Standalone Telegram SOCKS5 Proxy"
+                                                        },
+                                                        value = "127.0.0.1:${settingsStore.socksPort}",
+                                                        onClick = { onOpenTools(5) },
+                                                    )
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                    SettingClickableRow(
+                                                        title = when (s.language) {
+                                                            AppLanguage.FA -> "حالت گیمینگ و آنالیز پینگ/جیتر"
+                                                            AppLanguage.AR -> "وضع الألعاب وتحليل البينج والجيتر"
+                                                            AppLanguage.EN -> "Gaming Mode & Jitter/Loss Analyzer"
+                                                        },
+                                                        value = if (settingsStore.gamingModeEnabled) "Active" else "Ready",
+                                                        onClick = { onOpenTools(6) },
+                                                    )
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                    SettingClickableRow(
                                                         title = s.toolSpeedTitle,
                                                         value = s.toolSpeedSubtitle,
                                                         onClick = { onOpenTools(0) },
                                                     )
-                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
                                                     SettingClickableRow(
                                                         title = s.toolLeakTitle,
                                                         value = s.toolLeakSubtitle,
                                                         onClick = { onOpenTools(1) },
                                                     )
-                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
                                                     SettingClickableRow(
                                                         title = s.toolScannerTitle,
                                                         value = s.toolScannerSubtitle,
                                                         onClick = { onOpenTools(2) },
                                                     )
-                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
                                                     SettingClickableRow(
                                                         title = s.toolWatchdogTitle,
                                                         value = s.toolWatchdogSubtitle,
                                                         onClick = { onOpenTools(3) },
                                                     )
-                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
+                                                    HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
                                                     SettingClickableRow(
                                                         title = s.toolMtuTitle,
                                                         value = s.toolMtuSubtitle,
@@ -2446,6 +2726,17 @@ fun SettingsScreen(
                                                             SettingClickableRow(
                                                                 title = s.versionTitle,
                                                                 value = s.language.localizeDigits(BuildConfig.VERSION_NAME),
+                                                                onClick = {},
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            val activeCpuAbi = remember { Build.SUPPORTED_ABIS.firstOrNull() ?: "universal" }
+                                                            SettingClickableRow(
+                                                                title = when (s.language) {
+                                                                    AppLanguage.FA -> "معماری پردازنده و بیلدهای منتشرشده"
+                                                                    AppLanguage.AR -> "معمارية المعالج والنسخ المنشورة"
+                                                                    AppLanguage.EN -> "CPU ABI & Multi-Arch Releases"
+                                                                },
+                                                                value = "$activeCpuAbi + Universal APK",
                                                                 onClick = {},
                                                             )
                                                             HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))

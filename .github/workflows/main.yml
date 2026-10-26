@@ -1,4 +1,4 @@
-name: Android CI / CD (Auto APK Release)
+name: Android CI / CD (Auto Multi-ABI & Universal APK Release)
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-and-deliver:
-    name: Build & Deliver Signed APKs
+    name: Build & Deliver Multi-CPU + Universal Signed APKs
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -67,50 +67,51 @@ jobs:
             echo "KEY_ALIAS=$SIGNING_KEY_ALIAS" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=$SIGNING_KEY_PASSWORD" >> "$GITHUB_ENV"
             echo "STORE_PASSWORD=$SIGNING_STORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "Using custom release keystore from GitHub Secrets."
           else
             cp debug.keystore release-keystore.jks
             echo "KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=android" >> "$GITHUB_ENV"
             echo "STORE_PASSWORD=android" >> "$GITHUB_ENV"
-            echo "No custom signing secrets required; automatically signing Release APK for direct installation."
           fi
 
-      - name: Assemble Signed Debug & Release APKs
+      - name: Assemble Multi-ABI & Universal Signed APKs
         env:
           SIGNING_KEY_ALIAS: ${{ env.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
         run: |
-          gradle assembleDebug assembleRelease -Pandroid.builder.sdkDownload=true --no-daemon --stacktrace
+          gradle assembleDebug assembleRelease -PenableAbiSplits=true -Pandroid.builder.sdkDownload=true --no-daemon --stacktrace
           mkdir -p dist
-          cp app/build/outputs/apk/debug/*.apk dist/FoxyVPN-Neu-debug.apk
-          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            cp app/build/outputs/apk/release/app-release.apk dist/FoxyVPN-Neu-release.apk
-          else
-            UNSIGNED_APK=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
-            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -n 1 || true)
-            if [ -n "$APKSIGNER" ]; then
-              "$APKSIGNER" sign --ks release-keystore.jks --ks-key-alias "$SIGNING_KEY_ALIAS" --ks-pass "pass:$SIGNING_STORE_PASSWORD" --key-pass "pass:$SIGNING_KEY_PASSWORD" --out dist/FoxyVPN-Neu-release.apk "$UNSIGNED_APK"
-            else
-              cp "$UNSIGNED_APK" dist/FoxyVPN-Neu-release.apk
-            fi
+          for apk in app/build/outputs/apk/release/*.apk; do
+            [ -e "$apk" ] || continue
+            base=$(basename "$apk")
+            out_name="FoxyVPN-Neu-${base#app-}"
+            cp "$apk" "dist/$out_name"
+          done
+          if [ -f "dist/FoxyVPN-Neu-universal-release.apk" ]; then
+            cp "dist/FoxyVPN-Neu-universal-release.apk" "dist/FoxyVPN-Neu-release.apk"
           fi
+          for dapk in app/build/outputs/apk/debug/*universal*.apk app/build/outputs/apk/debug/*.apk; do
+            if [ -e "$dapk" ]; then
+              cp "$dapk" "dist/FoxyVPN-Neu-debug.apk"
+              break
+            fi
+          done
           ls -lh dist/
 
       - name: Clean Temporary Keystore
         if: always()
         run: rm -f release-keystore.jks
 
-      - name: Upload Ready-to-Install APK Artifacts
+      - name: Upload Multi-ABI & Universal APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: FoxyVPN-Neu-Installable-APKs
+          name: FoxyVPN-Neu-MultiABI-APKs
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Automatically Publish Direct APK to GitHub Releases
+      - name: Publish Multi-ABI & Universal APKs to GitHub Releases
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         uses: softprops/action-gh-release@v2
@@ -118,16 +119,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest-apk' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'FoxyVPN Neu - Direct Install APK (Latest Build)' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'FoxyVPN Neu - Multi-CPU & Universal APKs (Latest Build)' }}
           body: |
-            ### FoxyVPN Neu (Bilingual EN/FA • Soft Neumorphism • Dynamic Island)
-            - **Package ID:** `com.vauth.foxyvpn.neu` (Installs side-by-side with original FoxyVPN without conflict)
-            - **Native Tunnel Engine:** `libhev-socks5-tunnel.so` bundled for `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`
-            - **Direct Installable Signed APKs:**
-              - `FoxyVPN-Neu-release.apk` (Signed & Optimized Release APK)
-              - `FoxyVPN-Neu-debug.apk` (Signed Debug APK)
+            ### FoxyVPN Neu (Soft Neumorphism • Dynamic Island • Telegram SOCKS5 Proxy)
+            - **Package ID:** `com.vauth.foxyvpn.neu`
+            - **Available APK Variants:**
+              - `FoxyVPN-Neu-universal-release.apk` / `FoxyVPN-Neu-release.apk` — **نسخه جامع برای همه پردازنده‌ها (Universal All-CPU)**
+              - `FoxyVPN-Neu-arm64-v8a-release.apk` — **مخصوص پردازنده‌های ۶۴ بیتی مدرن (ARM64-v8a)**
+              - `FoxyVPN-Neu-armeabi-v7a-release.apk` — **مخصوص پردازنده‌های ۳۲ بیتی قدیمی‌تر (ARMv7a)**
+              - `FoxyVPN-Neu-x86_64-release.apk` — **مخصوص پردازنده‌های ۶۴ بیتی اینتل/AMD و شبیه‌سازها (x86_64)**
+              - `FoxyVPN-Neu-x86-release.apk` — **مخصوص پردازنده‌های ۳۲ بیتی x86**
           files: |
-            dist/FoxyVPN-Neu-release.apk
-            dist/FoxyVPN-Neu-debug.apk
+            dist/*.apk
           prerelease: false
           make_latest: true

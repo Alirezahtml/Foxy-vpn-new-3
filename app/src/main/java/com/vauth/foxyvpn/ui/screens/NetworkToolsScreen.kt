@@ -29,16 +29,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +77,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -102,6 +112,7 @@ import com.vauth.foxyvpn.ui.theme.neumorphicTouchBounce
 import com.vauth.foxyvpn.ui.theme.staggeredEntrance
 import com.vauth.foxyvpn.vpn.FoxyVpnService
 import com.vauth.foxyvpn.vpn.PingUtil
+import com.vauth.foxyvpn.vpn.socks.LocalSocks5Server
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -123,6 +134,8 @@ enum class NetworkToolTab(
     val id: Int,
     val icon: ImageVector,
 ) {
+    TELEGRAM_PROXY(5, Icons.AutoMirrored.Filled.Send),
+    GAMING_MODE(6, Icons.Filled.SportsEsports),
     SPEED_TEST(0, Icons.Filled.Speed),
     LEAK_INSPECTOR(1, Icons.Filled.Security),
     SMART_SERVER(2, Icons.Filled.Explore),
@@ -136,6 +149,16 @@ enum class NetworkToolTab(
         SMART_SERVER -> s.toolScannerTitle
         WATCHDOG -> s.toolWatchdogTitle
         MTU_OPTIMIZER -> s.toolMtuTitle
+        TELEGRAM_PROXY -> when (s.language) {
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "پروکسی تلگرام"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "بروكسي تيليجرام"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Telegram Proxy"
+        }
+        GAMING_MODE -> when (s.language) {
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "حالت گیمینگ"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "وضع الألعاب"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Gaming Mode"
+        }
     }
 
     fun localizedSubtitle(s: FoxyStrings): String = when (this) {
@@ -144,6 +167,16 @@ enum class NetworkToolTab(
         SMART_SERVER -> s.toolScannerSubtitle
         WATCHDOG -> s.toolWatchdogSubtitle
         MTU_OPTIMIZER -> s.toolMtuSubtitle
+        TELEGRAM_PROXY -> when (s.language) {
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "سرویس محلی SOCKS5 امن روی 127.0.0.1 با اتصال مستقیم به تلگرام"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "خادم SOCKS5 محلي آمن على 127.0.0.1 لتطبيق تيليجرام"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Local loopback SOCKS5 proxy (127.0.0.1) routed through VPN tunnel"
+        }
+        GAMING_MODE -> when (s.language) {
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "تثبیت پینگ، تست جیتر و پکت‌لاس واقعی و قفل تعویض خودکار سرور"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "تثبيت البينج وقياس الجيتر وفقدان الحزم أثناء اللعب"
+            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Real Latency, Jitter & Packet Loss Analyzer + Server Lock"
+        }
     }
 }
 
@@ -276,6 +309,11 @@ fun NetworkToolsScreen(
                         )
                         NetworkToolTab.WATCHDOG -> WatchdogKeepAlivePanel(app = app)
                         NetworkToolTab.MTU_OPTIMIZER -> MtuDpiOptimizerPanel(app = app)
+                        NetworkToolTab.TELEGRAM_PROXY -> TelegramProxyToolPanel(
+                            app = app,
+                            onRequestConnect = onRequestConnect,
+                        )
+                        NetworkToolTab.GAMING_MODE -> GamingModeToolPanel(app = app)
                     }
                 }
             }
@@ -920,6 +958,47 @@ private fun LeakInspectorToolPanel(app: FoxyVpnApp) {
                     s.leakIpv6Label,
                     if (isConnected) s.leakIpv6Protected else s.leakIpv6Inactive,
                 )
+                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                val lastVpnError by FoxyVpnService.lastError.collectAsState()
+                val activeProtoBadge by FoxyVpnService.activeProtocolBadge.collectAsState()
+                val pingMethod = "TCP SYN/ACK + TLS ALPN"
+                val pingRtt by FoxyVpnService.pingLatencyMs.collectAsState()
+                val context = LocalContext.current
+                var diagnosticCopied by remember { mutableStateOf(false) }
+
+                InspectorDetailRow(
+                    when (s.language) {
+                        com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "وضعیت خطای تونل / پروتکل"
+                        com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "حالة خطأ النفق / البروتوكول"
+                        com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Tunnel Diagnostics & Protocol"
+                    },
+                    when {
+                        !lastVpnError.isNullOrBlank() -> lastVpnError!!
+                        isConnected -> "$activeProtoBadge • OK"
+                        else -> "—"
+                    },
+                )
+                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                InspectorDetailRow(
+                    when (s.language) {
+                        com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "حفاظت نشت هنگام قطع (Exit Guard)"
+                        com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "حماية التسرب عند الانقطاع"
+                        com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Disconnect Leak Protection"
+                    },
+                    if (app.settingsStore.exitCheckEnabled) {
+                        when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "فعال (مسدودسازی نشت DNS/IP)"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "مفعل (حظر تسرب DNS/IP)"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Active (Strict DNS/IP Guard)"
+                        }
+                    } else {
+                        when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "استاندارد"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "قياسي"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Standard"
+                        }
+                    },
+                )
 
                 scanError?.let {
                     Spacer(Modifier.height(10.dp))
@@ -940,6 +1019,68 @@ private fun LeakInspectorToolPanel(app: FoxyVpnApp) {
                     Spacer(Modifier.width(10.dp))
                     Text(
                         if (isScanning) s.leakScanningButton else s.leakRescanButton,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // One-Tap Sanitized Diagnostic Report (Redacts tokens, credentials, and full IPs)
+                NeumorphicButton(
+                    onClick = {
+                        fun maskIp(ip: String?): String {
+                            if (ip.isNullOrBlank() || ip == "—") return "—"
+                            val parts = ip.split(".")
+                            return if (parts.size == 4) "${parts[0]}.${parts[1]}.***.***" else "REDACTED_IP"
+                        }
+                        fun sanitizeText(raw: String?): String {
+                            if (raw.isNullOrBlank()) return "None"
+                            return raw
+                                .replace(Regex("(?i)(bearer|token|password|secret|key)\\s*[:=]\\s*\\S+"), "$1=[REDACTED]")
+                                .replace(Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"), "[REDACTED_EMAIL]")
+                                .replace(Regex("\\b(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\b"), "$1.$2.***.***")
+                        }
+                        val report = buildString {
+                            appendLine("=== FoxyVPN Sanitized Diagnostic Report ===")
+                            appendLine("Timestamp: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
+                            appendLine("Tunnel State: ${state.name}")
+                            appendLine("Protocol Mode: ${app.settingsStore.connectionProtocolMode.name} (Active: $activeProtoBadge)")
+                            appendLine("Latency Probe: ${pingMethod} (${pingRtt?.let { "${it}ms" } ?: "N/A"})")
+                            appendLine("Leak Status: ${if (isProtectedNoLeak) "PROTECTED (No IP/DNS Leak)" else if (isConnected) "VERIFYING" else "DISCONNECTED"}")
+                            appendLine("ISP Exit (Masked): ${maskIp(directTrace?.ip)} (${directTrace?.country ?: "—"})")
+                            appendLine("VPN Exit (Masked): ${maskIp(tunnelTrace?.ip)} (${tunnelTrace?.country ?: "—"}, Colo: ${tunnelTrace?.colo ?: "—"})")
+                            appendLine("DoH DNS Status: ${dohLatencyMs?.let { "OK (${it}ms)" } ?: "Pending"}")
+                            appendLine("MTU & Buffers: MTU=${app.settingsStore.effectiveMtu} (Auto=${app.settingsStore.mtuModeAuto}), Split=${app.settingsStore.tlsSplitMode.name}")
+                            appendLine("Gaming Mode: ${app.settingsStore.gamingModeEnabled} | Telegram Proxy: ${app.settingsStore.telegramProxyModeEnabled} (127.0.0.1:${app.settingsStore.socksPort})")
+                            appendLine("Last Tunnel Error: ${sanitizeText(lastVpnError ?: scanError)}")
+                            appendLine("Privacy Note: All credentials, tokens, and full IP addresses are automatically redacted.")
+                        }
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        cm?.setPrimaryClip(ClipData.newPlainText("FoxyVPN Diagnostics", report))
+                        diagnosticCopied = true
+                    },
+                    accentColor = statusColors.connected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neumorphicTouchBounce(),
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = if (diagnosticCopied) {
+                            when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "گزارش تشخیصی امن کپی شد (بدون اطلاعات حساس)"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "تم نسخ التقرير التشخيصي الآمن"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Sanitized Diagnostic Report Copied!"
+                            }
+                        } else {
+                            when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "کپی گزارش تشخیصی یک‌لمسی (بدون افشای اطلاعات حساس)"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "نسخ التقرير التشخيصي بنقرة واحدة"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Copy One-Tap Sanitized Diagnostic Report"
+                            }
+                        },
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1019,6 +1160,10 @@ private fun InspectorDetailRow(label: String, value: String) {
 private data class BenchmarkedServer(
     val candidate: ProxyCandidate,
     val latencyMs: Int,
+    val jitterMs: Int,
+    val successRatePercent: Int,
+    val stabilityScore: Int,
+    val method: String,
 )
 
 @Composable
@@ -1059,7 +1204,7 @@ private fun SmartServerScannerPanel(
                     }
                 }
                 .distinctBy { "${it.countryCode}:${it.cityCode}" }
-                .take(18)
+                .take(14)
 
             if (candidates.isEmpty()) {
                 statusText = s.scannerEmptyCatalog
@@ -1069,10 +1214,20 @@ private fun SmartServerScannerPanel(
 
             candidates.forEachIndexed { idx, candidate ->
                 statusText = s.scannerProbingServer(candidate.countryName.ifBlank { candidate.countryCode }, candidate.cityCode)
-                val rtt = PingUtil.measureTcpLatencyMs(candidate.host, candidate.port)
-                if (rtt != null) {
-                    results.add(BenchmarkedServer(candidate, rtt))
-                    results.sortBy { it.latencyMs }
+                val bench = PingUtil.benchmarkServerStability(candidate.host, candidate.port, probes = 3)
+                if (bench != null) {
+                    results.add(
+                        BenchmarkedServer(
+                            candidate = candidate,
+                            latencyMs = bench.avgLatencyMs,
+                            jitterMs = bench.jitterMs,
+                            successRatePercent = bench.successRatePercent,
+                            stabilityScore = bench.stabilityScore,
+                            method = bench.method,
+                        )
+                    )
+                    // Rank by highest stability score first, then lowest latency
+                    results.sortWith(compareByDescending<BenchmarkedServer> { it.stabilityScore }.thenBy { it.latencyMs })
                 }
                 progress = (idx + 1).toFloat() / candidates.size.toFloat()
             }
@@ -1250,16 +1405,24 @@ private fun SmartServerScannerPanel(
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
-                                    text = s.language.localizeDigits(item.candidate.host),
+                                    text = "${s.language.localizeDigits(item.candidate.host)} • Jitter ${s.language.localizeNumber(item.jitterMs)}ms • OK ${s.language.localizeNumber(item.successRatePercent)}%",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = neu.textSecondary,
                                 )
                             }
-                            Text(
-                                text = s.language.formatPingLocalized(item.latencyMs),
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
-                                color = statusColors.connected,
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "${item.method} • ${s.language.formatPingLocalized(item.latencyMs)}",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = statusColors.connected,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = "Score ${s.language.localizeNumber(item.stabilityScore)}/100",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = neu.accent,
+                                )
+                            }
                         }
                     }
                 }
@@ -1576,7 +1739,9 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
 
-    var currentMtu by remember { mutableIntStateOf(app.settingsStore.mtu) }
+    var currentMtu by remember { mutableIntStateOf(app.settingsStore.effectiveMtu) }
+    var mtuAutoMode by remember { mutableStateOf(app.settingsStore.mtuModeAuto) }
+    var bufferAutoMode by remember { mutableStateOf(app.settingsStore.socketBufferModeAuto) }
     var currentSplit by remember { mutableStateOf(app.settingsStore.tlsSplitMode) }
     var isTesting by remember { mutableStateOf(false) }
     var statusMessage by remember(s.isRtl) { mutableStateOf(s.mtuInitialStatus) }
@@ -1658,7 +1823,7 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
                 ) {
                     SpeedMetricTile(
                         label = s.mtuActiveLabel,
-                        value = s.mtuBytesValue(currentMtu),
+                        value = if (mtuAutoMode) "Auto (${s.mtuBytesValue(1400)})" else s.mtuBytesValue(currentMtu),
                         accent = neu.accent,
                         modifier = Modifier.weight(1f),
                     )
@@ -1670,7 +1835,51 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
+
+                // Auto Safe MTU & Socket Buffer Toggles
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "حالت خودکار و امن MTU و بافر سوکت (Auto Safe)"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "الوضع التلقائي الآمن لـ MTU والمخازن"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Auto Safe MTU (1400) & Socket Buffers"
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = neu.textPrimary,
+                        )
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "جلوگیری از تغییر دستی بدون تست معتبر و حفظ پایداری تونل"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "منع التغييرات اليدوية دون اختبار صالح"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Prevents unverified MTU changes and enforces safe TCP window sizes"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = neu.textSecondary,
+                        )
+                    }
+                    Switch(
+                        checked = mtuAutoMode && bufferAutoMode,
+                        onCheckedChange = { enabled ->
+                            mtuAutoMode = enabled
+                            bufferAutoMode = enabled
+                            app.settingsStore.mtuModeAuto = enabled
+                            app.settingsStore.socketBufferModeAuto = enabled
+                            currentMtu = app.settingsStore.effectiveMtu
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = statusColors.connected,
+                        ),
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
 
                 Text(
                     text = statusMessage,
@@ -1699,6 +1908,41 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
                     )
                 }
 
+                Spacer(Modifier.height(10.dp))
+
+                // One-Tap Reset to Safe Network Defaults
+                NeumorphicButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        app.settingsStore.resetNetworkTuningToSafeDefaults()
+                        mtuAutoMode = true
+                        bufferAutoMode = true
+                        currentMtu = app.settingsStore.effectiveMtu
+                        currentSplit = app.settingsStore.tlsSplitMode
+                        statusMessage = when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "تمامی تنظیمات MTU، بافرها و DNS به مقادیر امن پیش‌فرض بازگردانی شدند."
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "تمت استعادة جميع إعدادات MTU و DNS إلى القيم الآمنة الافتراضية."
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Reset MTU (1400 Auto), Buffers & DNS to verified safe defaults."
+                        }
+                    },
+                    accentColor = neu.textSecondary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neumorphicTouchBounce(),
+                ) {
+                    Icon(Icons.Filled.RestartAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "بازگردانی به مقادیر امن پیش‌فرض (Safe Reset)"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "استعادة القيم الآمنة الافتراضية"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Reset to Verified Safe Defaults"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
                 AnimatedVisibility(
                     visible = recommended != null,
                     enter = fadeIn() + expandVertically(),
@@ -1711,8 +1955,10 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
                             NeumorphicButton(
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    app.settingsStore.mtuModeAuto = false
                                     app.settingsStore.mtu = best.mtu
                                     app.settingsStore.tlsSplitMode = best.splitMode
+                                    mtuAutoMode = false
                                     currentMtu = best.mtu
                                     currentSplit = best.splitMode
                                     statusMessage = s.mtuAppliedStatus(best.mtu, best.splitMode.localizedLabel(s.language))
@@ -1744,8 +1990,10 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(neu.surfaceElevated)
                                 .clickable {
+                                    app.settingsStore.mtuModeAuto = false
                                     app.settingsStore.mtu = row.mtu
                                     app.settingsStore.tlsSplitMode = row.splitMode
+                                    mtuAutoMode = false
                                     currentMtu = row.mtu
                                     currentSplit = row.splitMode
                                 }
@@ -1765,6 +2013,509 @@ private fun MtuDpiOptimizerPanel(app: FoxyVpnApp) {
                             )
                         }
                     }
+                }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+// ============================================================================
+// TOOL 6: STANDALONE TELEGRAM SOCKS5 PROXY (127.0.0.1 LOOPBACK)
+// ============================================================================
+@Composable
+private fun TelegramProxyToolPanel(
+    app: FoxyVpnApp,
+    onRequestConnect: () -> Unit,
+) {
+    val neu = currentNeumorphicColors
+    val statusColors = LocalFoxyStatusColors.current
+    val s = currentFoxyStrings
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val state by FoxyVpnService.state.collectAsState()
+    val isConnected = state == ConnectionState.CONNECTED
+
+    var telegramModeEnabled by remember { mutableStateOf(app.settingsStore.telegramProxyModeEnabled) }
+    val socksHost = "127.0.0.1"
+    val socksPort = app.settingsStore.socksPort
+    var listeningPort by remember { mutableIntStateOf(LocalSocks5Server.activeListeningPort.get()) }
+    var activeClients by remember { mutableIntStateOf(LocalSocks5Server.activeClientConnections.get()) }
+    var totalRelayed by remember { mutableStateOf(LocalSocks5Server.totalRelayedConnections.get()) }
+
+    LaunchedEffect(isConnected) {
+        while (true) {
+            listeningPort = LocalSocks5Server.activeListeningPort.get()
+            activeClients = LocalSocks5Server.activeClientConnections.get()
+            totalRelayed = LocalSocks5Server.totalRelayedConnections.get()
+            delay(1000L)
+        }
+    }
+
+    var isVerifying by remember { mutableStateOf(false) }
+    var verificationResult by remember { mutableStateOf<PingUtil.Socks5TunnelVerification?>(null) }
+    var copiedBadge by remember { mutableStateOf<String?>(null) }
+
+    val tgDeepLink = "tg://socks?server=$socksHost&port=$socksPort"
+    val tgWebLink = "https://t.me/socks?server=$socksHost&port=$socksPort"
+
+    fun copyText(label: String, value: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        cm?.setPrimaryClip(ClipData.newPlainText(label, value))
+        copiedBadge = label
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        NeumorphicCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .staggeredEntrance(0),
+            cornerRadius = 24.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "حالت مستقل پروکسی تلگرام (LocalSocks5Server)"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "وضع بروكسي تيليجرام المستقل"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Standalone Telegram SOCKS5 Proxy"
+                            },
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = neu.textPrimary,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "مقید به 127.0.0.1 (غیرقابل دسترسی در شبکه عمومی) با محافظت در برابر حلقه اتصال"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "مقيد بـ 127.0.0.1 مع حماية ضد حلقات الاتصال"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Strictly bound to 127.0.0.1 loopback (never exposed on LAN) with anti-loop guard"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = neu.textSecondary,
+                        )
+                    }
+                    Switch(
+                        checked = telegramModeEnabled,
+                        onCheckedChange = { enabled ->
+                            telegramModeEnabled = enabled
+                            app.settingsStore.telegramProxyModeEnabled = enabled
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = statusColors.connected,
+                        ),
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Real Host & Port Tiles
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SpeedMetricTile(
+                        label = "SOCKS5 Host (Loopback)",
+                        value = socksHost,
+                        accent = neu.accent,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SpeedMetricTile(
+                        label = "SOCKS5 Port",
+                        value = "$socksPort",
+                        accent = statusColors.connected,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SpeedMetricTile(
+                        label = when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "وضعیت سرویس SOCKS5"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "حالة خدمة SOCKS5"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Service Status"
+                        },
+                        value = if (isConnected && listeningPort > 0) {
+                            "ONLINE (:$listeningPort)"
+                        } else {
+                            when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "نیازمند اتصال VPN"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "يتطلب اتصال VPN"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "VPN Disconnected"
+                            }
+                        },
+                        accent = if (isConnected && listeningPort > 0) statusColors.connected else statusColors.connecting,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SpeedMetricTile(
+                        label = when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "نشست‌های فعال / کل"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "الجلسات النشطة / الإجمالي"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Active / Total Streams"
+                        },
+                        value = "$activeClients / $totalRelayed",
+                        accent = neu.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Copy Host, Copy Port, Copy Link Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        "Host" to socksHost,
+                        "Port" to socksPort.toString(),
+                        "Link" to tgDeepLink,
+                    ).forEach { (lbl, value) ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(neu.surfaceElevated)
+                                .clickable { copyText(lbl, value) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.ContentCopy, contentDescription = null, tint = neu.accent, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (copiedBadge == lbl) "✓ $lbl" else "Copy $lbl",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = neu.textPrimary,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // One-Tap Add to Telegram Button
+                NeumorphicButton(
+                    onClick = {
+                        if (!isConnected) {
+                            app.settingsStore.telegramProxyModeEnabled = true
+                            telegramModeEnabled = true
+                            onRequestConnect()
+                        }
+                        runCatching {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(tgDeepLink)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }.onFailure {
+                            runCatching {
+                                val fallback = Intent(Intent.ACTION_VIEW, Uri.parse(tgWebLink)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(fallback)
+                            }
+                        }
+                    },
+                    accentColor = neu.accent,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neumorphicTouchBounce(),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "افزودن یک‌لمسی به تلگرام (tg://socks)"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "إضافة مباشرة إلى تيليجرام (tg://socks)"
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Add Proxy to Telegram (tg://socks)"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // Real End-to-End SOCKS5 Tunnel Verification Button
+                NeumorphicButton(
+                    onClick = {
+                        if (isVerifying) return@NeumorphicButton
+                        isVerifying = true
+                        scope.launch {
+                            verificationResult = PingUtil.verifySocks5TelegramTunnel(socksHost, socksPort)
+                            isVerifying = false
+                        }
+                    },
+                    enabled = !isVerifying && isConnected,
+                    accentColor = statusColors.connected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neumorphicTouchBounce(),
+                ) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = when {
+                            !isConnected -> when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "ابتدا VPN را متصل کنید تا تست عبور ترافیک انجام شود"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "اتصل بـ VPN أولاً لاختبار عبور حركة المرور"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Connect VPN First to Verify Tunnel Traffic"
+                            }
+                            isVerifying -> when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "در حال تست واقعی عبور ترافیک از SOCKS5..."
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "جارٍ اختبار عبور حركة المرور عبر SOCKS5..."
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Verifying Real SOCKS5 Upstream Traffic..."
+                            }
+                            else -> when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "تست واقعی عبور ترافیک تلگرام از تونل VPN"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "اختبار حقيقي لعبور حركة تيليجرام عبر النفق"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Verify Real Telegram Traffic Through Tunnel"
+                            }
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                verificationResult?.let { res ->
+                    Spacer(Modifier.height(14.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(neu.surfaceElevated)
+                            .padding(14.dp),
+                    ) {
+                        Column {
+                            Text(
+                                text = if (res.success) {
+                                    "✓ SOCKS5 Tunnel Verified (${res.rttMs ?: 0} ms) • Exit: ${res.exitIp ?: "—"} (${res.exitCountry ?: "Edge"})"
+                                } else {
+                                    "✗ Verification Error: ${res.detailMessage}"
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (res.success) statusColors.connected else MaterialTheme.colorScheme.error,
+                            )
+                            if (res.success) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "Telegram Core Reachability: ${if (res.telegramReachable) "Reachable via VPN Upstream" else "Trace Verified"} • ${res.detailMessage}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = neu.textSecondary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+// ============================================================================
+// TOOL 7: GAMING MODE (REAL RTT, JITTER, PACKET LOSS & UDP DISCLOSURE)
+// ============================================================================
+@Composable
+private fun GamingModeToolPanel(app: FoxyVpnApp) {
+    val neu = currentNeumorphicColors
+    val statusColors = LocalFoxyStatusColors.current
+    val s = currentFoxyStrings
+    val scope = rememberCoroutineScope()
+
+    var gamingMode by remember { mutableStateOf(app.settingsStore.gamingModeEnabled) }
+    var isBenchmarking by remember { mutableStateOf(false) }
+    var benchmark by remember { mutableStateOf<PingUtil.ServerStabilityBenchmark?>(null) }
+
+    fun runGamingProbe() {
+        if (isBenchmarking) return
+        isBenchmarking = true
+        scope.launch {
+            val host = FoxyVpnService.connectedEndpoint.value?.first
+                ?: app.proxyStateStore.load()?.host
+                ?: "1.1.1.1"
+            val port = FoxyVpnService.connectedEndpoint.value?.second
+                ?: app.proxyStateStore.load()?.port
+                ?: 443
+            benchmark = PingUtil.benchmarkServerStability(host, port, probes = 6)
+            isBenchmarking = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        runGamingProbe()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        NeumorphicCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .staggeredEntrance(0),
+            cornerRadius = 24.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "حالت گیمینگ و تثبیت پینگ (Gaming Mode)"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "وضع الألعاب وتثبيت البينج"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Low-Jitter Gaming Mode"
+                            },
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = neu.textPrimary,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "توقف اسکن و تعویض خودکار سرور در پس‌زمینه هنگام بازی برای جلوگیری از قطع لحظه‌ای"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "إيقاف فحص وتبديل الخوادم التلقائي أثناء اللعب"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Suspends background server scanning & auto-switching during gameplay"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = neu.textSecondary,
+                        )
+                    }
+                    Switch(
+                        checked = gamingMode,
+                        onCheckedChange = { enabled ->
+                            gamingMode = enabled
+                            app.settingsStore.gamingModeEnabled = enabled
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = statusColors.connected,
+                        ),
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SpeedMetricTile(
+                        label = "Avg Ping (${benchmark?.method ?: "TCP"})",
+                        value = benchmark?.let { "${it.avgLatencyMs} ms" } ?: "—",
+                        accent = statusColors.connected,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SpeedMetricTile(
+                        label = "Jitter (نوسان پینگ)",
+                        value = benchmark?.let { "${it.jitterMs} ms" } ?: "—",
+                        accent = neu.accent,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SpeedMetricTile(
+                        label = "Packet Loss (پکت‌لاس)",
+                        value = benchmark?.let { "${it.packetLossPercent}%" } ?: "—",
+                        accent = if ((benchmark?.packetLossPercent ?: 0) == 0) statusColors.connected else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SpeedMetricTile(
+                        label = "Stability Score",
+                        value = benchmark?.let { "${it.stabilityScore}/100" } ?: "—",
+                        accent = neu.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Honest Technical Disclosure on UDP Support
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(neu.surfaceElevated)
+                        .padding(14.dp),
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "شفافیت فنی UDP: در معماری رله‌های HTTP/2 TLS، بسته‌های UDP پورت ۵۳ (DNS) از طریق DoH عبور داده می‌شوند. بازی‌های مبتنی بر TCP و WebSocket کامل پشتیبانی می‌شوند، اما ترافیک خام UDP غیر-DNS در رله‌های Fastly پشتیبانی نمی‌شود."
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "شفافية UDP: يتم تمرير حزم UDP للمنفذ 53 (DNS) عبر DoH. الألعاب المعتمدة على TCP مدعومة بالكامل، بينما لا يتم تمرير حزم UDP الخام غير الخاصة بـ DNS."
+                            com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "UDP Transparency: Port 53 UDP (DNS) is relayed via encrypted DoH. TCP/WebSocket games are fully supported; raw non-DNS UDP game datagrams are not carried by Fastly HTTP/2 TCP relays."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = neu.textSecondary,
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                NeumorphicButton(
+                    onClick = ::runGamingProbe,
+                    enabled = !isBenchmarking,
+                    accentColor = neu.accent,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neumorphicTouchBounce(),
+                ) {
+                    Icon(Icons.Filled.SportsEsports, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = if (isBenchmarking) {
+                            when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "در حال اندازه‌گیری ۶ مرحله‌ای پینگ، جیتر و پکت‌لاس..."
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "جارٍ قياس البينج والجيتر وفقدان الحزم..."
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Running 6-Probe Ping, Jitter & Loss Test..."
+                            }
+                        } else {
+                            when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "تست مجدد پینگ، جیتر و پکت‌لاس واقعی"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "إعادة اختبار البينج والجيتر وفقدان الحزم"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "Re-test Real Latency, Jitter & Packet Loss"
+                            }
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         }

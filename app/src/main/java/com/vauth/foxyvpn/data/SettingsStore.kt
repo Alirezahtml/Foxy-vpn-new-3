@@ -256,14 +256,16 @@ enum class ConnectionProtocolMode(
     val descriptionEn: String,
     val descriptionFa: String,
     val descriptionAr: String,
+    val isSupported: Boolean = true,
 ) {
     AUTO(
-        label = "Smart Auto (HTTP/3 + HTTP/2)",
-        persianLabel = "خودکار هوشمند (HTTP/3 و HTTP/2)",
-        arabicLabel = "تلقائي ذكي (HTTP/3 و HTTP/2)",
-        descriptionEn = "Automatically negotiates the fastest protocol with seamless fallback",
-        descriptionFa = "مذاکره خودکار سریع‌ترین پروتکل همراه با جایگزینی بدون قطعی",
-        descriptionAr = "يختار تلقائياً أسرع بروتوكول متوافق لكل خادم",
+        label = "Smart Auto (HTTP/2 + HTTP/1.1 TLS)",
+        persianLabel = "خودکار هوشمند (HTTP/2 و HTTP/1.1 TLS)",
+        arabicLabel = "تلقائي ذكي (HTTP/2 و HTTP/1.1 TLS)",
+        descriptionEn = "Automatically negotiates ALPN h2 over TLS 1.3 with HTTP/1.1 fallback",
+        descriptionFa = "مذاکره خودکار ALPN h2 روی TLS 1.3 همراه با پشتیبان HTTP/1.1",
+        descriptionAr = "يختار تلقائياً أسرع بروتوكول TCP/TLS متوافق لكل خادم",
+        isSupported = true,
     ),
     HTTP2_TCP(
         label = "HTTP/2 Multiplexed (TCP/TLS)",
@@ -272,22 +274,25 @@ enum class ConnectionProtocolMode(
         descriptionEn = "Multiplexed TLS 1.3 ALPN h2 tunnel with high firewall compatibility",
         descriptionFa = "تونل رمزنگاری‌شده چندجریانی TLS 1.3 با بیشترین پایداری",
         descriptionAr = "نفق TCP مشفر بأعلى توافق مع الشبكات المقيدة",
-    ),
-    HTTP3_QUIC(
-        label = "HTTP/3 MASQUE (QUIC Low-Latency)",
-        persianLabel = "پروتکل HTTP/3 سریع (QUIC / MASQUE)",
-        arabicLabel = "بروتوكول HTTP/3 السريع (QUIC / MASQUE)",
-        descriptionEn = "Low-latency MASQUE / Extended CONNECT framing with 1360 MTU & fast ping",
-        descriptionFa = "پروتکل کم‌تاخیر MASQUE با فریم‌بندی سریع و پینگ بهینه",
-        descriptionAr = "بروتوكول QUIC سريع ومنخفض التأخير مع بديل تلقائي",
+        isSupported = true,
     ),
     HTTP11_TLS(
         label = "HTTP/1.1 Direct TLS (Anti-Throttle)",
         persianLabel = "پروتکل HTTP/1.1 مستقیم (ضد محدودیت)",
         arabicLabel = "بروتوكول HTTP/1.1 المباشر (مضاد للتقييد)",
-        descriptionEn = "Dedicated ALPN http/1.1 TLS sockets per flow to bypass HTTP/2 throttling",
-        descriptionFa = "سوکت‌های اختصاصی ALPN http/1.1 برای دور زدن محدودیت مالتی‌پلکس",
+        descriptionEn = "ALPN http/1.1 + SNI fragmentation compatibility mode",
+        descriptionFa = "ارتباط ALPN http/1.1 همراه با تکه‌تکه‌سازی SNI برای دور زدن محدودیت",
         descriptionAr = "اتصال TLS مباشر لتجاوز تقييد الشبكات",
+        isSupported = true,
+    ),
+    HTTP3_QUIC(
+        label = "HTTP/3 QUIC (UDP — Unsupported by Relay)",
+        persianLabel = "پروتکل HTTP/3 QUIC (غیرفعال — عدم پشتیبانی رله)",
+        arabicLabel = "بروتوكول HTTP/3 QUIC (غير مدعوم حالياً)",
+        descriptionEn = "Mozilla Fastly relays use TCP CONNECT; native QUIC/UDP transport is not supported",
+        descriptionFa = "رله‌های فعلی موزیلا فقط روی TCP کار می‌کنند؛ اتصال واقعی QUIC/UDP پشتیبانی نمی‌شود",
+        descriptionAr = "خوادم موزيلا الحالية تعمل عبر TCP فقط؛ لا يدعم QUIC/UDP",
+        isSupported = false,
     ),
     ;
 
@@ -305,11 +310,28 @@ enum class ConnectionProtocolMode(
 
     val shortBadge: String
         get() = when (this) {
-            AUTO -> "H3/H2"
+            AUTO -> "AUTO (H2)"
             HTTP2_TCP -> "HTTP/2"
-            HTTP3_QUIC -> "HTTP/3"
+            HTTP3_QUIC -> "H3 (N/A)"
             HTTP11_TLS -> "HTTP/1.1"
         }
+}
+
+enum class DynamicIslandDoubleTapAction(
+    val labelEn: String,
+    val labelFa: String,
+    val labelAr: String,
+) {
+    EXPAND("Expand / Collapse", "باز و بسته کردن پنل", "فتح وإغلاق اللوحة"),
+    TOGGLE_VPN("Quick Connect / Disconnect", "قطع و وصل سریع فیلترشکن", "اتصال أو قطع سريع"),
+    OPEN_SERVERS("Open Server List", "باز کردن لیست سرورها", "فتح قائمة الخوادم"),
+    ;
+
+    fun localizedLabel(lang: AppLanguage): String = when (lang) {
+        AppLanguage.EN -> labelEn
+        AppLanguage.FA -> labelFa
+        AppLanguage.AR -> labelAr
+    }
 }
 
 enum class DynamicIslandMotionStyle(
@@ -435,11 +457,15 @@ class SettingsStore(context: Context) {
         }
 
     var connectionProtocolMode: ConnectionProtocolMode
-        get() = ConnectionProtocolMode.entries.firstOrNull {
-            it.name == prefs.getString("connection_protocol_mode", null)
-        } ?: ConnectionProtocolMode.AUTO
+        get() {
+            val raw = ConnectionProtocolMode.entries.firstOrNull {
+                it.name == prefs.getString("connection_protocol_mode", null)
+            } ?: ConnectionProtocolMode.AUTO
+            return if (raw.isSupported) raw else ConnectionProtocolMode.AUTO
+        }
         set(value) {
-            prefs.edit().putString("connection_protocol_mode", value.name).apply()
+            val safeValue = if (value.isSupported) value else ConnectionProtocolMode.AUTO
+            prefs.edit().putString("connection_protocol_mode", safeValue.name).apply()
             _islandConfigRevision.value++
         }
 
@@ -512,13 +538,133 @@ class SettingsStore(context: Context) {
             _islandConfigRevision.value++
         }
 
+    var dynamicIslandCollapsedHeightDp: Int
+        get() = prefs.getInt("dynamic_island_collapsed_height_dp", 44).coerceIn(32, 56)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_collapsed_height_dp", value.coerceIn(32, 56)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandExpandedWidthPercent: Int
+        get() = prefs.getInt("dynamic_island_expanded_width_percent", 96).coerceIn(82, 100)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_expanded_width_percent", value.coerceIn(82, 100)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandFontScalePercent: Int
+        get() = prefs.getInt("dynamic_island_font_scale_percent", 100).coerceIn(80, 125)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_font_scale_percent", value.coerceIn(80, 125)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandBorderWidthDp: Float
+        get() = runCatching { prefs.getFloat("dynamic_island_border_width_dp", 1.2f) }.getOrDefault(1.2f).coerceIn(0.5f, 3.0f)
+        set(value) {
+            prefs.edit().putFloat("dynamic_island_border_width_dp", value.coerceIn(0.5f, 3.0f)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandShadowDepthDp: Int
+        get() = prefs.getInt("dynamic_island_shadow_depth_dp", 8).coerceIn(0, 20)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_shadow_depth_dp", value.coerceIn(0, 20)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandSpringDampingPercent: Int
+        get() = prefs.getInt("dynamic_island_spring_damping_percent", 82).coerceIn(55, 95)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_spring_damping_percent", value.coerceIn(55, 95)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandSpringStiffness: Int
+        get() = prefs.getInt("dynamic_island_spring_stiffness", 340).coerceIn(180, 600)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_spring_stiffness", value.coerceIn(180, 600)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandQuickAppIconSizeDp: Int
+        get() = prefs.getInt("dynamic_island_quick_app_icon_size_dp", 36).coerceIn(28, 48)
+        set(value) {
+            prefs.edit().putInt("dynamic_island_quick_app_icon_size_dp", value.coerceIn(28, 48)).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandShowAppNames: Boolean
+        get() = prefs.getBoolean("dynamic_island_show_app_names", true)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_show_app_names", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandDoubleTapAction: DynamicIslandDoubleTapAction
+        get() = DynamicIslandDoubleTapAction.entries.firstOrNull {
+            it.name == prefs.getString("dynamic_island_double_tap_action", null)
+        } ?: DynamicIslandDoubleTapAction.EXPAND
+        set(value) {
+            prefs.edit().putString("dynamic_island_double_tap_action", value.name).apply()
+            _islandConfigRevision.value++
+        }
+
     var exitCheckEnabled: Boolean
         get() = prefs.getBoolean(KEY_EXIT_CHECK, true)
         set(value) { prefs.edit().putBoolean(KEY_EXIT_CHECK, value).apply() }
 
+    var mtuModeAuto: Boolean
+        get() = prefs.getBoolean("mtu_mode_auto", true)
+        set(value) { prefs.edit().putBoolean("mtu_mode_auto", value).apply() }
+
     var mtu: Int
         get() = prefs.getInt(KEY_CUSTOM_MTU, DEFAULT_MTU)
         set(value) { prefs.edit().putInt(KEY_CUSTOM_MTU, value.coerceIn(MIN_MTU, MAX_MTU)).apply() }
+
+    val effectiveMtu: Int
+        get() = if (mtuModeAuto) {
+            if (gamingModeEnabled) 1360 else DEFAULT_MTU
+        } else {
+            mtu.coerceIn(1280, 1500)
+        }
+
+    var socketBufferModeAuto: Boolean
+        get() = prefs.getBoolean("socket_buffer_mode_auto", true)
+        set(value) { prefs.edit().putBoolean("socket_buffer_mode_auto", value).apply() }
+
+    var gamingModeEnabled: Boolean
+        get() = prefs.getBoolean("gaming_mode_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("gaming_mode_enabled", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var telegramProxyModeEnabled: Boolean
+        get() = prefs.getBoolean("telegram_proxy_mode_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("telegram_proxy_mode_enabled", value).apply()
+            if (value) {
+                // Force loopback binding so local Telegram proxy is never exposed on public networks
+                socksBindAddress = DEFAULT_SOCKS_BIND_ADDRESS
+            }
+            _islandConfigRevision.value++
+        }
+
+    fun resetNetworkTuningToSafeDefaults() {
+        prefs.edit()
+            .putBoolean("mtu_mode_auto", true)
+            .putInt(KEY_CUSTOM_MTU, DEFAULT_MTU)
+            .putBoolean("socket_buffer_mode_auto", true)
+            .putBoolean(KEY_TCP_BUFFER_BOOST, true)
+            .putString(KEY_DNS_PROVIDER, DnsProvider.SYSTEM_DEFAULT.name)
+            .putString(KEY_BOOTSTRAP_DNS_PROVIDER, BootstrapDnsProvider.AUTOMATIC.name)
+            .putString(KEY_TLS_SPLIT_MODE, TlsSplitMode.OFF.name)
+            .putString(KEY_CUSTOM_EDGE_ADDRESS, "")
+            .putString(KEY_SOCKS_BIND_ADDRESS, DEFAULT_SOCKS_BIND_ADDRESS)
+            .apply()
+        _islandConfigRevision.value++
+    }
 
     var cachedRealIp: String?
         get() = prefs.getString(KEY_CACHED_REAL_IP, null)

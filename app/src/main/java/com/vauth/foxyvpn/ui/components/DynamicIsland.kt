@@ -28,10 +28,12 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -92,6 +94,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -348,6 +351,44 @@ private val KNOWN_APP_WEB_FALLBACKS = mapOf(
     "com.discord" to "https://discord.com/app",
 )
 
+private fun formatCompactIslandSpeed(bytesPerSec: Long, lang: FoxyLanguage): String {
+    val safe = bytesPerSec.coerceAtLeast(0L)
+    val valueText: String
+    val unit: String
+    when {
+        safe < 1024L -> {
+            valueText = safe.toString()
+            unit = when (lang) {
+                FoxyLanguage.FA, FoxyLanguage.AR -> "ب/ث"
+                FoxyLanguage.EN -> "B/s"
+            }
+        }
+        safe < 1024L * 1024L -> {
+            valueText = String.format(java.util.Locale.US, "%.1f", safe / 1024.0)
+            unit = when (lang) {
+                FoxyLanguage.FA -> "ک‌ب/ث"
+                FoxyLanguage.AR -> "ك.ب/ث"
+                FoxyLanguage.EN -> "KB/s"
+            }
+        }
+        else -> {
+            valueText = String.format(java.util.Locale.US, "%.2f", safe / (1024.0 * 1024.0))
+            unit = when (lang) {
+                FoxyLanguage.FA -> "م‌ب/ث"
+                FoxyLanguage.AR -> "م.ب/ث"
+                FoxyLanguage.EN -> "MB/s"
+            }
+        }
+    }
+    val localizedVal = when (lang) {
+        FoxyLanguage.FA -> valueText.map { ch -> if (ch in '0'..'9') ('\u06F0'.code + (ch - '0')).toChar() else if (ch == '.') '٫' else ch }.joinToString("")
+        FoxyLanguage.AR -> valueText.map { ch -> if (ch in '0'..'9') ('\u0660'.code + (ch - '0')).toChar() else if (ch == '.') '٫' else ch }.joinToString("")
+        FoxyLanguage.EN -> valueText
+    }
+    return "$localizedVal $unit"
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DynamicIsland(
     settingsStore: SettingsStore,
@@ -487,19 +528,30 @@ fun DynamicIsland(
     val manualScaleFactor = rawManualScaleFactor.takeIf { it.isFinite() }?.coerceIn(0.65f, 1.35f) ?: 1f
 
     val sizeConfig = settingsStore.dynamicIslandSize
+    val customCollapsedHeightDp = settingsStore.dynamicIslandCollapsedHeightDp.coerceIn(32, 56)
+    val expandedWidthFraction = (settingsStore.dynamicIslandExpandedWidthPercent.coerceIn(82, 100) / 100f)
+    val fontScaleMultiplier = (settingsStore.dynamicIslandFontScalePercent.coerceIn(80, 125) / 100f)
+    val borderStrokeWidth = settingsStore.dynamicIslandBorderWidthDp.coerceIn(0.5f, 3.0f).dp
+    val shadowDepth = settingsStore.dynamicIslandShadowDepthDp.coerceIn(0, 20).dp
+    val springDamping = (settingsStore.dynamicIslandSpringDampingPercent.coerceIn(55, 95) / 100f)
+    val springStiffness = settingsStore.dynamicIslandSpringStiffness.coerceIn(180, 600).toFloat()
+    val quickAppIconSize = settingsStore.dynamicIslandQuickAppIconSizeDp.coerceIn(28, 48).dp
+    val showQuickAppNames = settingsStore.dynamicIslandShowAppNames
+    val doubleTapAction = settingsStore.dynamicIslandDoubleTapAction
+
     val minWidthDpVal = (sizeConfig.widthDp * manualScaleFactor).coerceIn(115f, 380f)
     val maxCollapsedWidthDpVal = ((sizeConfig.widthDp + 115) * manualScaleFactor)
         .coerceIn(minWidthDpVal + 16f, 430f)
     val scaledMinWidth = minWidthDpVal.dp
     val scaledMaxCollapsedWidth = maxCollapsedWidthDpVal.dp
-    val scaledMinHeight = (sizeConfig.heightDp * manualScaleFactor).coerceIn(30f, 110f).dp
+    val scaledMinHeight = (customCollapsedHeightDp * manualScaleFactor).coerceIn(28f, 110f).dp
 
     val baseCornerRadius = settingsStore.dynamicIslandCornerRadius.coerceIn(18, 42).dp
     val rawPillCornerRadius by animateDpAsState(
         targetValue = if (isExpanded) 28.dp else (baseCornerRadius * manualScaleFactor).coerceIn(18.dp, 42.dp),
         animationSpec = spring(
-            dampingRatio = 0.76f,
-            stiffness = 320f,
+            dampingRatio = springDamping,
+            stiffness = springStiffness,
         ),
         label = "island-corner-radius",
     )
@@ -509,8 +561,8 @@ fun DynamicIsland(
     val expandMorphProgress by animateFloatAsState(
         targetValue = if (isExpanded) 1f else 0f,
         animationSpec = spring(
-            dampingRatio = 0.75f,
-            stiffness = 300f,
+            dampingRatio = springDamping,
+            stiffness = springStiffness,
         ),
         label = "island-liquid-morph",
     )
@@ -613,7 +665,7 @@ fun DynamicIsland(
         val collapsedHorizontalPadding = (16.dp * manualScaleFactor).coerceIn(12.dp, 22.dp)
         val collapsedVerticalPadding = (9.dp * manualScaleFactor).coerceIn(7.dp, 14.dp)
 
-        // Clean hardware-accelerated Soft Neumorphic Dynamic Island container with liquid spring morphing (no animated LED border)
+        // Clean hardware-accelerated Soft Neumorphic Dynamic Island container with smooth spring morphing
         Box(
             modifier = Modifier
                 .graphicsLayer {
@@ -621,9 +673,6 @@ fun DynamicIsland(
                         translationX = smoothOffsetX
                         translationY = smoothOffsetY
                     }
-                    val morphPulse = 1f + kotlin.math.sin(expandMorphProgress.coerceIn(0f, 1f) * Math.PI.toFloat()) * 0.025f
-                    scaleX = morphPulse
-                    scaleY = morphPulse
                     transformOrigin = TransformOrigin(0.5f, 0f)
                 }
                 .then(dragGestureModifier)
@@ -636,10 +685,22 @@ fun DynamicIsland(
                     accentColor = activeStatusColor,
                     cornerRadius = pillCornerRadius,
                 )
+                .then(
+                    if (shadowDepth > 0.dp) {
+                        Modifier.shadow(
+                            elevation = shadowDepth,
+                            shape = shape,
+                            ambientColor = activeStatusColor.copy(alpha = 0.45f),
+                            spotColor = activeStatusColor.copy(alpha = 0.65f),
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
                 .clip(shape)
                 .background(pillBrush)
                 .border(
-                    width = 1.2.dp,
+                    width = borderStrokeWidth,
                     brush = Brush.verticalGradient(
                         colors = when (state) {
                             ConnectionState.CONNECTED -> listOf(
@@ -658,50 +719,59 @@ fun DynamicIsland(
                     ),
                     shape = shape,
                 )
-                .clickable(
+                .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) {
-                    if (settingsStore.dynamicIslandHapticEnabled) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    }
-                    isExpanded = !isExpanded
-                },
+                    onDoubleClick = {
+                        if (settingsStore.dynamicIslandHapticEnabled) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        when (doubleTapAction) {
+                            com.vauth.foxyvpn.data.DynamicIslandDoubleTapAction.EXPAND -> {
+                                isExpanded = !isExpanded
+                            }
+                            com.vauth.foxyvpn.data.DynamicIslandDoubleTapAction.TOGGLE_VPN -> {
+                                if (state == ConnectionState.CONNECTED || state == ConnectionState.CONNECTING) {
+                                    onDisconnect()
+                                } else {
+                                    onRequestConnect()
+                                }
+                            }
+                            com.vauth.foxyvpn.data.DynamicIslandDoubleTapAction.OPEN_SERVERS -> {
+                                onOpenServers()
+                            }
+                        }
+                    },
+                    onClick = {
+                        if (settingsStore.dynamicIslandHapticEnabled) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        isExpanded = !isExpanded
+                    },
+                ),
             contentAlignment = Alignment.TopCenter,
         ) {
             AnimatedContent(
                 targetState = isExpanded,
                 transitionSpec = {
                     val enterTransition = fadeIn(
-                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing)
                     ) + scaleIn(
-                        initialScale = 0.86f,
+                        initialScale = 0.94f,
                         transformOrigin = TransformOrigin(0.5f, 0f),
                         animationSpec = spring(
-                            dampingRatio = 0.76f,
-                            stiffness = 310f,
-                        ),
-                    ) + expandVertically(
-                        expandFrom = Alignment.Top,
-                        animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = 320f,
+                            dampingRatio = springDamping,
+                            stiffness = springStiffness,
                         ),
                     )
                     val exitTransition = fadeOut(
-                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)
                     ) + scaleOut(
-                        targetScale = 0.88f,
+                        targetScale = 0.94f,
                         transformOrigin = TransformOrigin(0.5f, 0f),
                         animationSpec = spring(
-                            dampingRatio = 0.84f,
-                            stiffness = 390f,
-                        ),
-                    ) + shrinkVertically(
-                        shrinkTowards = Alignment.Top,
-                        animationSpec = spring(
-                            dampingRatio = 0.84f,
-                            stiffness = 390f,
+                            dampingRatio = (springDamping + 0.04f).coerceAtMost(0.98f),
+                            stiffness = (springStiffness + 40f).coerceAtMost(650f),
                         ),
                     )
                     enterTransition
@@ -709,8 +779,8 @@ fun DynamicIsland(
                         .using(
                             SizeTransform(clip = true) { _, _ ->
                                 spring(
-                                    dampingRatio = 0.78f,
-                                    stiffness = 320f,
+                                    dampingRatio = springDamping,
+                                    stiffness = springStiffness,
                                 )
                             }
                         )
@@ -840,7 +910,7 @@ fun DynamicIsland(
                                 if (settingsStore.dynamicIslandShowSpeed) {
                                     Spacer(Modifier.width(8.dp))
                                     AnimatedContent(
-                                        targetState = s.language.formatSpeedLocalized(liveStats.rxRateBytesPerSec),
+                                        targetState = formatCompactIslandSpeed(liveStats.rxRateBytesPerSec, s.language),
                                         transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(120)) },
                                         label = "island-live-speed",
                                     ) { rxFormatted ->
@@ -923,11 +993,11 @@ fun DynamicIsland(
                         modifier = Modifier
                             .then(
                                 if (isSystemOverlay) {
-                                    Modifier.width(344.dp)
+                                    Modifier.width((344f * expandedWidthFraction).dp)
                                 } else {
                                     Modifier
                                         .widthIn(max = maxOf(460.dp, scaledMinWidth + 24.dp))
-                                        .fillMaxWidth()
+                                        .fillMaxWidth(expandedWidthFraction)
                                 },
                             )
                             .padding(horizontal = 18.dp, vertical = 16.dp),
@@ -1075,8 +1145,8 @@ fun DynamicIsland(
                                 )
                             }
                             if (settingsStore.dynamicIslandShowSpeed) {
-                                val tx = s.language.formatSpeedLocalized(liveStats.txRateBytesPerSec)
-                                val rx = s.language.formatSpeedLocalized(liveStats.rxRateBytesPerSec)
+                                val tx = formatCompactIslandSpeed(liveStats.txRateBytesPerSec, s.language)
+                                val rx = formatCompactIslandSpeed(liveStats.rxRateBytesPerSec, s.language)
                                 add(
                                     IslandTelemetryCardItem(
                                         label = s.islandLiveSpeed,
@@ -1109,27 +1179,27 @@ fun DynamicIsland(
                                                         color = contentColor.copy(alpha = 0.10f),
                                                         shape = RoundedCornerShape(14.dp),
                                                     )
-                                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
                                             ) {
                                                 Text(
                                                     text = item.label,
                                                     style = MaterialTheme.typography.labelSmall.copy(
                                                         fontFamily = fonts.bodyFont,
                                                         fontWeight = FontWeight.Medium,
-                                                        lineHeight = 17.sp,
+                                                        lineHeight = 16.sp,
                                                     ),
                                                     color = contentColor.copy(alpha = 0.68f),
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.padding(bottom = 3.dp),
+                                                    modifier = Modifier.padding(bottom = 2.dp),
                                                 )
                                                 Text(
                                                     text = item.value,
-                                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                                    style = MaterialTheme.typography.bodySmall.copy(
                                                         fontFamily = fonts.monoFont,
                                                         fontWeight = FontWeight.Bold,
-                                                        fontSize = 13.sp,
-                                                        lineHeight = 19.sp,
+                                                        fontSize = 11.5.sp,
+                                                        lineHeight = 17.sp,
                                                         fontFeatureSettings = "tnum",
                                                     ),
                                                     color = item.valueColor,
@@ -1151,24 +1221,25 @@ fun DynamicIsland(
                         // Pinned Quick-Launch Apps Row (Shown both in-app and in external system overlay with real App Icon + App Name)
                         if (settingsStore.dynamicIslandShowQuickApps) {
                             Column(modifier = Modifier.fillMaxWidth()) {
-                                Spacer(Modifier.height(12.dp))
+                                Spacer(Modifier.height(10.dp))
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    Spacer(Modifier.width(2.dp))
                                     pinnedApps.forEach { appItem ->
+                                        val badgeVisualSize = (quickAppIconSize.value * 0.50f).coerceIn(14f, 26f).dp
                                         Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(13.dp))
+                                                .clip(RoundedCornerShape(12.dp))
                                                 .background(contentColor.copy(alpha = 0.13f))
                                                 .border(
                                                     width = 0.8.dp,
                                                     color = contentColor.copy(alpha = 0.14f),
-                                                    shape = RoundedCornerShape(13.dp),
+                                                    shape = RoundedCornerShape(12.dp),
                                                 )
                                                 .clickable {
                                                     runCatching {
@@ -1189,26 +1260,30 @@ fun DynamicIsland(
                                                         }
                                                     }
                                                 }
-                                                .padding(horizontal = 11.dp, vertical = 7.dp),
+                                                .padding(horizontal = if (showQuickAppNames) 9.dp else 7.dp, vertical = 6.dp),
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 QuickAppIconBadge(
                                                     packageName = appItem.packageName,
                                                     iconBitmap = appItem.iconBitmap,
-                                                    size = 18.dp,
+                                                    size = badgeVisualSize,
                                                 )
-                                                Spacer(Modifier.width(7.dp))
-                                                Text(
-                                                    text = appItem.label,
-                                                    style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontFamily = fonts.bodyFont,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        lineHeight = 16.sp,
-                                                    ),
-                                                    color = contentColor,
-                                                    maxLines = 1,
-                                                )
+                                                if (showQuickAppNames) {
+                                                    Spacer(Modifier.width(5.dp))
+                                                    Text(
+                                                        text = appItem.label,
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontFamily = fonts.bodyFont,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            fontSize = (11f * fontScaleMultiplier).sp,
+                                                            lineHeight = 15.sp,
+                                                        ),
+                                                        color = contentColor,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1422,27 +1497,34 @@ fun DynamicIslandLivePreviewCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
                         .background(statusColors.connected),
                 )
-                Spacer(Modifier.width(7.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = when (s.language) {
-                        FoxyLanguage.FA -> "پیش‌نمایش زنده داینامیک آیلند"
-                        FoxyLanguage.AR -> "معاينة حية للجزيرة التفاعلية"
-                        FoxyLanguage.EN -> "Live Dynamic Island Preview"
+                        FoxyLanguage.FA -> "پیش‌نمایش زنده"
+                        FoxyLanguage.AR -> "معاينة حية"
+                        FoxyLanguage.EN -> "Live Preview"
                     },
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontFamily = fonts.headingFont,
                         fontWeight = FontWeight.ExtraBold,
                     ),
                     color = neu.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+
+            Spacer(Modifier.width(8.dp))
 
             Row(
                 modifier = Modifier
@@ -1476,6 +1558,8 @@ fun DynamicIslandLivePreviewCard(
                             fontSize = 10.sp,
                         ),
                         color = if (!previewExpanded) Color.White else neu.textSecondary,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
                 Box(
@@ -1493,6 +1577,8 @@ fun DynamicIslandLivePreviewCard(
                             fontSize = 10.sp,
                         ),
                         color = if (previewExpanded) Color.White else neu.textSecondary,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
             }
@@ -1750,6 +1836,18 @@ fun DynamicIslandCustomizationModal(
     var showAnim by remember { mutableStateOf(settingsStore.dynamicIslandAnimation) }
     var pinnedApps by remember { mutableStateOf(settingsStore.dynamicIslandPinnedApps) }
     var showAppPicker by remember { mutableStateOf(false) }
+
+    // Deep Micro-Detail Customization states
+    var collapsedHeightDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandCollapsedHeightDp.toFloat()) }
+    var expandedWidthPercent by remember { mutableFloatStateOf(settingsStore.dynamicIslandExpandedWidthPercent.toFloat()) }
+    var fontScalePercent by remember { mutableFloatStateOf(settingsStore.dynamicIslandFontScalePercent.toFloat()) }
+    var borderWidthDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandBorderWidthDp) }
+    var shadowDepthDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandShadowDepthDp.toFloat()) }
+    var springDampingPercent by remember { mutableFloatStateOf(settingsStore.dynamicIslandSpringDampingPercent.toFloat()) }
+    var springStiffness by remember { mutableFloatStateOf(settingsStore.dynamicIslandSpringStiffness.toFloat()) }
+    var quickAppIconSizeDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandQuickAppIconSizeDp.toFloat()) }
+    var showAppNames by remember { mutableStateOf(settingsStore.dynamicIslandShowAppNames) }
+    var doubleTapAction by remember { mutableStateOf(settingsStore.dynamicIslandDoubleTapAction) }
 
     if (showAppPicker) {
         DynamicIslandAppPickerDialog(
@@ -2364,6 +2462,320 @@ fun DynamicIslandCustomizationModal(
                         settingsStore.dynamicIslandAnimation = it
                     },
                 )
+
+                HorizontalDivider(
+                    color = neu.textSecondary.copy(alpha = 0.14f),
+                    modifier = Modifier.padding(vertical = 14.dp),
+                )
+
+                // 6. Deep Micro-Detail Geometry, Physics & Interaction Studio
+                Text(
+                    text = when (s.language) {
+                        FoxyLanguage.FA -> "تنظیمات مهندسی و عمیق جزئیات (Micro-Detail Studio)"
+                        FoxyLanguage.AR -> "الإعدادات الهندسية العميقة للجزيرة"
+                        FoxyLanguage.EN -> "Deep Micro-Detail Geometry & Physics Studio"
+                    },
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontFamily = fonts.headingFont,
+                        fontWeight = FontWeight.ExtraBold,
+                    ),
+                    color = neu.accent,
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Collapsed Height Slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "ارتفاع کپسول در حالت بسته (dp)"
+                            FoxyLanguage.AR -> "ارتفاع الكبسولة المغلقة (dp)"
+                            FoxyLanguage.EN -> "Collapsed Pill Height (dp)"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${collapsedHeightDp.roundToInt()} dp",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = collapsedHeightDp,
+                    onValueChange = {
+                        collapsedHeightDp = it
+                        settingsStore.dynamicIslandCollapsedHeightDp = it.roundToInt()
+                    },
+                    valueRange = 32f..56f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                // Expanded Sheet Width %
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "پهنای کارت در حالت بازشده (%)"
+                            FoxyLanguage.AR -> "عرض البطاقة الموسعة (%)"
+                            FoxyLanguage.EN -> "Expanded Sheet Width (%)"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${expandedWidthPercent.roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = expandedWidthPercent,
+                    onValueChange = {
+                        expandedWidthPercent = it
+                        settingsStore.dynamicIslandExpandedWidthPercent = it.roundToInt()
+                    },
+                    valueRange = 82f..100f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                // Font Scale %
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "مقیاس فونت و اعداد داخل داینامیک"
+                            FoxyLanguage.AR -> "حجم الخط والأرقام داخل الجزيرة"
+                            FoxyLanguage.EN -> "Typography & Telemetry Font Scale"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${fontScalePercent.roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = fontScalePercent,
+                    onValueChange = {
+                        fontScalePercent = it
+                        settingsStore.dynamicIslandFontScalePercent = it.roundToInt()
+                    },
+                    valueRange = 80f..125f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                // Border Width (dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "ضخامت کادر دور داینامیک آیلند"
+                            FoxyLanguage.AR -> "سمك إطار الجزيرة التفاعلية"
+                            FoxyLanguage.EN -> "Border Stroke Thickness (dp)"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.1f dp", borderWidthDp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = borderWidthDp,
+                    onValueChange = {
+                        borderWidthDp = it
+                        settingsStore.dynamicIslandBorderWidthDp = it
+                    },
+                    valueRange = 0.5f..3.0f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                // Shadow Depth (dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "عمق سایه سه‌بعدی (Shadow Elevation)"
+                            FoxyLanguage.AR -> "عمق الظل ثلاثي الأبعاد"
+                            FoxyLanguage.EN -> "3D Shadow Depth (dp)"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${shadowDepthDp.roundToInt()} dp",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = shadowDepthDp,
+                    onValueChange = {
+                        shadowDepthDp = it
+                        settingsStore.dynamicIslandShadowDepthDp = it.roundToInt()
+                    },
+                    valueRange = 0f..20f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                // Spring Physics Damping & Stiffness
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "ضریب نرمی فنر انیمیشن (Spring Damping)"
+                            FoxyLanguage.AR -> "معامل نعومة الزنبرك"
+                            FoxyLanguage.EN -> "Spring Physics Damping (%)"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${springDampingPercent.roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = springDampingPercent,
+                    onValueChange = {
+                        springDampingPercent = it
+                        settingsStore.dynamicIslandSpringDampingPercent = it.roundToInt()
+                    },
+                    valueRange = 55f..95f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "سرعت و چابکی فنر باز/بسته شدن (Stiffness)"
+                            FoxyLanguage.AR -> "صلابة وسرعة الزنبرك"
+                            FoxyLanguage.EN -> "Spring Physics Stiffness"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${springStiffness.roundToInt()}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = springStiffness,
+                    onValueChange = {
+                        springStiffness = it
+                        settingsStore.dynamicIslandSpringStiffness = it.roundToInt()
+                    },
+                    valueRange = 180f..600f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                // Quick App Icon Size & Show App Names
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "اندازه آیکون برنامه‌های سریع (dp)"
+                            FoxyLanguage.AR -> "حجم أيقونات التطبيقات السريعة"
+                            FoxyLanguage.EN -> "Quick-App Icon Scale (dp)"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = neu.textPrimary,
+                    )
+                    Text(
+                        text = "${quickAppIconSizeDp.roundToInt()} dp",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
+                        color = neu.accent,
+                    )
+                }
+                Slider(
+                    value = quickAppIconSizeDp,
+                    onValueChange = {
+                        quickAppIconSizeDp = it
+                        settingsStore.dynamicIslandQuickAppIconSizeDp = it.roundToInt()
+                    },
+                    valueRange = 28f..48f,
+                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                )
+
+                IslandModalSwitchRow(
+                    title = when (s.language) {
+                        FoxyLanguage.FA -> "نمایش نام برنامه‌ها کنار آیکون در نوار سریع"
+                        FoxyLanguage.AR -> "إظهار أسماء التطبيقات بجانب الأيقونة"
+                        FoxyLanguage.EN -> "Show App Labels Next to Quick-App Icons"
+                    },
+                    checked = showAppNames,
+                    onCheckedChange = {
+                        showAppNames = it
+                        settingsStore.dynamicIslandShowAppNames = it
+                    },
+                )
+
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = when (s.language) {
+                        FoxyLanguage.FA -> "عملیات دو بار ضربه (Double-Tap) روی داینامیک آیلند"
+                        FoxyLanguage.AR -> "إجراء النقر المزدوج على الجزيرة"
+                        FoxyLanguage.EN -> "Double-Tap Action on Dynamic Island"
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = neu.textSecondary,
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    com.vauth.foxyvpn.data.DynamicIslandDoubleTapAction.entries.forEach { action ->
+                        val selected = doubleTapAction == action
+                        val lbl = when (s.language) {
+                            FoxyLanguage.FA -> action.labelFa
+                            FoxyLanguage.AR -> action.labelAr
+                            FoxyLanguage.EN -> action.labelEn
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                .clickable {
+                                    doubleTapAction = action
+                                    settingsStore.dynamicIslandDoubleTapAction = action
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = lbl,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (selected) Color.White else neu.textPrimary,
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {

@@ -106,6 +106,9 @@ class LocalSocks5Server(
             size > UNREACHABLE_TARGET_CACHE_CAP
     }
 
+    val isListening: Boolean
+        get() = serverSocket?.let { !it.isClosed && it.isBound } == true
+
     fun start() {
 
         val server = ServerSocket()
@@ -116,6 +119,8 @@ class LocalSocks5Server(
         }
         server.bind(InetSocketAddress(InetAddress.getByName(bindAddress), port), ACCEPT_BACKLOG)
         serverSocket = server
+        activeListeningPort.set(port)
+        activeListeningHost = bindAddress
         AppLogger.i(TAG, "started local SOCKS5 proxy on $bindAddress:$port (turboBuffers=$tcpBufferBoost)")
         scope.launch {
             while (!server.isClosed) {
@@ -145,10 +150,13 @@ class LocalSocks5Server(
                     runCatching { client.close() }
                     continue
                 }
+                activeClientConnections.incrementAndGet()
+                totalRelayedConnections.incrementAndGet()
                 scope.launch {
                     try {
                         handleClient(client)
                     } finally {
+                        activeClientConnections.decrementAndGet()
                         connectionSlots.release()
                     }
                 }
@@ -158,6 +166,8 @@ class LocalSocks5Server(
 
     fun stop() {
         runCatching { serverSocket?.close() }
+        activeListeningPort.set(0)
+        activeClientConnections.set(0)
         AppLogger.i(TAG, "stopped local SOCKS5 proxy on $bindAddress:$port")
 
         DohDnsClient.shutdown()
@@ -333,9 +343,16 @@ class LocalSocks5Server(
         }
 
         val literal = target.literal
-        if (literal != null && literal.isLocalNetworkDestination()) {
+        val normalizedHost = targetHost.trim().lowercase()
+        val isSelfOrLocalHost = (literal != null && literal.isLocalNetworkDestination()) ||
+            normalizedHost == "localhost" ||
+            normalizedHost == "127.0.0.1" ||
+            normalizedHost == "::1" ||
+            normalizedHost == "0.0.0.0" ||
+            (normalizedHost == bindAddress.lowercase() && targetPort == port)
+        if (isSelfOrLocalHost) {
             localNetworkRejections.incrementAndGet()
-            AppLogger.d(TAG, "refusing $targetKey: local-network address, not carried by the tunnel")
+            AppLogger.d(TAG, "refusing $targetKey: local-network or self-proxy address (loop prevention)")
             output.write(socksReply(0x02)) 
             output.flush()
             return
@@ -634,5 +651,15 @@ class LocalSocks5Server(
         return byteArrayOf(0x05, replyCode.toByte(), 0x00, addressType.toByte()) +
             addressBytes +
             byteArrayOf((boundPort ushr 8).toByte(), boundPort.toByte())
+    }
+
+    companion object {
+        @Volatile
+        var activeListeningHost: String = "127.0.0.1"
+            private set
+
+        val activeListeningPort = AtomicInteger(0)
+        val activeClientConnections = AtomicInteger(0)
+        val totalRelayedConnections = AtomicLong(0L)
     }
 }

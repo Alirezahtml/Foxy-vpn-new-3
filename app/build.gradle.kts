@@ -96,6 +96,16 @@ android {
         abortOnError = false
     }
 
+    val enableAbiSplits = project.findProperty("enableAbiSplits")?.toString()?.toBoolean() == true
+    splits {
+        abi {
+            isEnable = enableAbiSplits
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
+        }
+    }
+
     packaging {
         resources.excludes.add("META-INF/INDEX.LIST")
         resources.excludes.add("META-INF/*.SF")

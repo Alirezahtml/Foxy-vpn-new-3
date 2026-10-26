@@ -342,6 +342,7 @@ class FoxyVpnService : VpnService() {
             enterForeground(statusLabel)
 
             acquireWakeLocks()
+            connectJob?.cancel()
             connectJob = scope.launch { opMutex.withLock { connect() } }
 
             return START_STICKY
@@ -526,26 +527,41 @@ class FoxyVpnService : VpnService() {
             var candidateIndex = 0
             var alternatesDiscovered = false
 
-            if (settingsStore.smartPingAutoSwitch && settingsStore.effectiveCustomEdgeAddress == null) {
+            if (settingsStore.smartPingAutoSwitch &&
+                !settingsStore.gamingModeEnabled &&
+                settingsStore.effectiveCustomEdgeAddress == null
+            ) {
                 runCatching {
-                    val alt = discoverAlternateCandidates(primaryCandidate)
-                        .filter { it.authority != primaryCandidate.authority }
-                        .take(MAX_ALTERNATE_EDGES)
-                    if (alt.isNotEmpty()) {
-                        alternatesDiscovered = true
-                        val pool = listOf(primaryCandidate) + alt
-                        val scored = pool.map { cand ->
-                            val rtt = PingUtil.measureTcpLatencyMs(cand.host, cand.port) ?: Int.MAX_VALUE
-                            cand to rtt
-                        }.sortedBy { it.second }
-                        candidates = scored.map { it.first }
-                        val best = scored.first()
-                        if (best.second < Int.MAX_VALUE && best.first.authority != primaryCandidate.authority) {
-                            proxyStateStore.save(best.first)
-                            AppLogger.i(
-                                TAG,
-                                "Smart Ping Auto-Optimizer selected fastest edge ${best.first.authority} (${best.second}ms)",
-                            )
+                    val primaryBench = PingUtil.benchmarkServerStability(primaryCandidate.host, primaryCandidate.port, probes = 2)
+                    // Only probe alternates if primary is unreachable or has high latency (> 220ms)
+                    if (primaryBench == null || primaryBench.avgLatencyMs > 220) {
+                        val alt = discoverAlternateCandidates(primaryCandidate)
+                            .filter { it.authority != primaryCandidate.authority }
+                            .take(MAX_ALTERNATE_EDGES)
+                        if (alt.isNotEmpty()) {
+                            alternatesDiscovered = true
+                            val pool = listOf(primaryCandidate) + alt
+                            val scored = pool.map { cand ->
+                                val bench = if (cand.authority == primaryCandidate.authority && primaryBench != null) {
+                                    primaryBench
+                                } else {
+                                    PingUtil.benchmarkServerStability(cand.host, cand.port, probes = 2)
+                                }
+                                Triple(cand, bench?.avgLatencyMs ?: Int.MAX_VALUE, bench?.stabilityScore ?: 0)
+                            }.sortedWith(compareByDescending<Triple<ProxyCandidate, Int, Int>> { it.third }.thenBy { it.second })
+                            candidates = scored.map { it.first }
+                            val best = scored.first()
+                            val primaryRtt = primaryBench?.avgLatencyMs ?: Int.MAX_VALUE
+                            if (best.second < Int.MAX_VALUE &&
+                                best.first.authority != primaryCandidate.authority &&
+                                best.second + 35 < primaryRtt
+                            ) {
+                                proxyStateStore.save(best.first)
+                                AppLogger.i(
+                                    TAG,
+                                    "Smart Ping Auto-Optimizer selected healthier edge ${best.first.authority} (${best.second}ms, score=${best.third})",
+                                )
+                            }
                         }
                     }
                 }
@@ -617,16 +633,20 @@ class FoxyVpnService : VpnService() {
             )
 
             val socksPort = settingsStore.socksPort
-            val socksBindAddress = settingsStore.socksBindAddress
+            val telegramStandalone = settingsStore.telegramProxyModeEnabled
+            val socksBindAddress = if (telegramStandalone) "127.0.0.1" else settingsStore.socksBindAddress
             val httpProxyPort = settingsStore.httpProxyPort
             val httpProxyEnabled = settingsStore.httpProxyEnabled
-            val proxyOnlyMode = settingsStore.proxyOnlyMode
+            val proxyOnlyMode = settingsStore.proxyOnlyMode || telegramStandalone
             val excludedApps = settingsStore.excludedApps
-            val turboBuffers = settingsStore.tcpBufferBoostEnabled
+            val turboBuffers = if (settingsStore.socketBufferModeAuto) true else settingsStore.tcpBufferBoostEnabled
+            val activeMtu = settingsStore.effectiveMtu
 
             val dohUrl = settingsStore.effectiveDohUrl
 
-            fun connectedLabel(): String = if (proxyOnlyMode) {
+            fun connectedLabel(): String = if (telegramStandalone) {
+                "Telegram Proxy \u2022 127.0.0.1:$socksPort"
+            } else if (proxyOnlyMode) {
                 if (httpProxyEnabled) {
                     "Proxy active \u2022 SOCKS $socksPort, HTTP $httpProxyPort"
                 } else {
@@ -676,14 +696,14 @@ class FoxyVpnService : VpnService() {
                 tunnelInterfaceActive = false
                 AppLogger.i(
                     TAG,
-                    "connect: proxy-only mode enabled, skipping TUN interface and tun2socks; " +
-                        "local proxy at $socksBindAddress:$socksPort",
+                    "connect: proxy-only / Telegram proxy mode enabled, skipping TUN interface; " +
+                        "local SOCKS5 at $socksBindAddress:$socksPort",
                 )
             } else {
                 val fd = establishTun(
                     excludedApps = excludedApps,
                     dohUrl = dohUrl,
-                    mtu = settingsStore.mtu,
+                    mtu = activeMtu,
                     unmetered = settingsStore.unmeteredVpnModeEnabled,
                 ) ?: error("Failed to establish TUN interface")
                 tunFd = fd
@@ -699,12 +719,12 @@ class FoxyVpnService : VpnService() {
                     applicationContext,
                     socksPort,
                     useMapDns = mapdnsActive,
-                    mtu = settingsStore.mtu,
+                    mtu = activeMtu,
                     tcpBufferBoost = turboBuffers,
                 )
                 val tunnelStarted = HevSocks5Tunnel.start(tunnelConfigPath, fd.fd)
                 if (!tunnelStarted) error("Failed to start the tun2socks tunnel (hev-socks5-tunnel)")
-                AppLogger.i(TAG, "connect: TUN interface up, hev-socks5-tunnel started")
+                AppLogger.i(TAG, "connect: TUN interface up (mtu=$activeMtu), hev-socks5-tunnel started")
                 delay(POST_TUN_SETTLE_MS)
             }
             ensureGenerationCurrent(myGeneration)
@@ -1365,13 +1385,17 @@ class FoxyVpnService : VpnService() {
                             val livePing = PingUtil.measureTcpLatencyMs(endpoint.first, endpoint.second)
                             if (livePing != null && _state.value == ConnectionState.CONNECTED) {
                                 _pingLatencyMs.value = livePing
-                                if (settingsStore.smartPingAutoSwitch && livePing > 380) {
+                                // Never auto-switch servers during Gaming Mode, and require 6 consecutive severe >600ms spikes otherwise
+                                if (settingsStore.smartPingAutoSwitch &&
+                                    !settingsStore.gamingModeEnabled &&
+                                    livePing > 600
+                                ) {
                                     consecutiveHighPingChecks++
-                                    if (consecutiveHighPingChecks >= 3) {
+                                    if (consecutiveHighPingChecks >= 6) {
                                         consecutiveHighPingChecks = 0
                                         AppLogger.i(
                                             TAG,
-                                            "Smart Ping Auto-Optimizer detected sustained high latency (${livePing}ms); probing faster edge",
+                                            "Smart Ping Auto-Optimizer detected sustained severe latency (${livePing}ms x6); redialing",
                                         )
                                         onUpstreamSessionUnhealthy()
                                     }

@@ -1594,21 +1594,33 @@ private fun WorldRouteMapCard(
     val isConnected = state == ConnectionState.CONNECTED
     val isConnecting = state == ConnectionState.CONNECTING
 
-    val originCountryCode = (realIp?.countryCode?.takeIf { it.isNotBlank() }
-        ?: cachedRealCountry?.takeIf { it.isNotBlank() }
-        ?: "IR").uppercase()
-    val originIpText = s.language.localizeDigits(
-        realIp?.ip?.takeIf { it.isNotBlank() }
-            ?: cachedRealIp?.takeIf { it.isNotBlank() }
-            ?: s.checking
-    )
+    // Strictly use real detected or cached ISP country; never fallback to a fake country code
+    val resolvedOriginCountryCode = (realIp?.countryCode?.takeIf { it.isNotBlank() && it != "—" }
+        ?: cachedRealCountry?.takeIf { it.isNotBlank() && it != "—" })?.uppercase()
+    val originIpRaw = realIp?.ip?.takeIf { it.isNotBlank() }
+        ?: cachedRealIp?.takeIf { it.isNotBlank() }
+    val originIpText = s.language.localizeDigits(originIpRaw ?: s.checking)
 
-    val exitCountryCode = (selectedProxy?.countryCode?.takeIf { it.isNotBlank() }
-        ?: vpnEdgeIp?.countryCode?.takeIf { it.isNotBlank() }
-        ?: "DE").uppercase()
-    val exitCountryName = selectedProxy?.let {
-        s.language.localizeCountryName(it.countryName, it.countryCode)
-    } ?: s.language.localizeCountryName(exitCountryCode, exitCountryCode)
+    // Strictly use real connected edge country or selected proxy country
+    val resolvedExitCountryCode = (
+        if (isConnected && vpnEdgeIp != null && vpnEdgeIp.countryCode.isNotBlank()) {
+            vpnEdgeIp.countryCode
+        } else {
+            selectedProxy?.countryCode?.takeIf { it.isNotBlank() && it != "REC" }
+                ?: vpnEdgeIp?.countryCode?.takeIf { it.isNotBlank() }
+        }
+    )?.uppercase()
+    val resolvedExitCityCode = selectedProxy?.cityCode?.takeIf { it.isNotBlank() }
+
+    val exitCountryName = when {
+        selectedProxy != null && selectedProxy.countryCode.isNotBlank() && selectedProxy.countryCode != "REC" -> {
+            val baseCountry = s.language.localizeCountryName(selectedProxy.countryName, selectedProxy.countryCode)
+            if (!resolvedExitCityCode.isNullOrBlank()) "$baseCountry (${resolvedExitCityCode.uppercase()})" else baseCountry
+        }
+        resolvedExitCountryCode != null -> s.language.localizeCountryName(resolvedExitCountryCode, resolvedExitCountryCode)
+        else -> s.recommendedFastest
+    }
+
     val exitIpText = s.language.localizeDigits(
         when {
             isConnected && vpnEdgeIp != null -> vpnEdgeIp.ip
@@ -1617,13 +1629,15 @@ private fun WorldRouteMapCard(
         }
     )
 
+    val isRouteVerifiedLive = isConnected && vpnEdgeIp != null && resolvedOriginCountryCode != null
+
     val infiniteTransition = rememberInfiniteTransition(label = "world-route-arc")
     val packetProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = if (isConnected) 2200 else 3400,
+                durationMillis = if (isConnected) 2000 else 3200,
                 easing = LinearEasing,
             ),
             repeatMode = RepeatMode.Restart,
@@ -1631,10 +1645,10 @@ private fun WorldRouteMapCard(
         label = "route-packet-progress",
     )
     val pulseRadius by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1.35f,
+        initialValue = 0.45f,
+        targetValue = 1.32f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = FastOutSlowInEasing),
+            animation = tween(1400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "route-node-pulse",
@@ -1662,21 +1676,45 @@ private fun WorldRouteMapCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = when (s.language) {
-                        FoxyLanguage.FA -> "نقشه مسیر رمزنگاری و تونل جهانی"
-                        FoxyLanguage.AR -> "خريطة مسار النفق العالمي المشفر"
-                        FoxyLanguage.EN -> "GLOBAL ENCRYPTED TUNNEL ROUTE MAP"
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = fonts.headingFont,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                    color = neu.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = when (s.language) {
+                            FoxyLanguage.FA -> "نقشه مسیر تونل جهانی"
+                            FoxyLanguage.AR -> "خريطة مسار النفق العالمي"
+                            FoxyLanguage.EN -> "GLOBAL TUNNEL ROUTE MAP"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = fonts.headingFont,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = neu.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (isRouteVerifiedLive) {
+                            when (s.language) {
+                                FoxyLanguage.FA -> "مسیر فعال تأییدشده با IP • موقعیت تقریبی مرکز شهر/کشور"
+                                FoxyLanguage.AR -> "مسار مؤكد عبر IP • موقع تقريبي لمركز المدينة/الدولة"
+                                FoxyLanguage.EN -> "Verified Live IP Route • Approx. City/Country Center"
+                            }
+                        } else {
+                            when (s.language) {
+                                FoxyLanguage.FA -> "پیش‌نمایش مسیر سرور • موقعیت تقریبی مرکز شهر/کشور"
+                                FoxyLanguage.AR -> "معاينة مسار الخادم • موقع تقريبي لمركز المدينة/الدولة"
+                                FoxyLanguage.EN -> "Target Server Preview • Approx. City/Country Center"
+                            }
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = fonts.bodyFont,
+                            fontSize = 10.sp,
+                        ),
+                        color = if (isRouteVerifiedLive) statusColors.connected else neu.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(Modifier.width(8.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1687,15 +1725,17 @@ private fun WorldRouteMapCard(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(statusColors.connected.copy(alpha = 0.14f))
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
                         ) {
                             Text(
-                                text = if (s.language == FoxyLanguage.FA) "ضد تبلیغ فعال" else "AdBlock",
+                                text = if (s.language == FoxyLanguage.FA) "ضد تبلیغ" else "AdBlock",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = fonts.headingFont,
                                     fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
                                 ),
                                 color = statusColors.connected,
+                                maxLines = 1,
                             )
                         }
                     }
@@ -1712,6 +1752,7 @@ private fun WorldRouteMapCard(
                                 fontWeight = FontWeight.ExtraBold,
                             ),
                             color = routeColor,
+                            maxLines = 1,
                         )
                     }
                 }
@@ -1719,7 +1760,7 @@ private fun WorldRouteMapCard(
 
             Spacer(Modifier.height(12.dp))
 
-            // Real Google Maps Global Tunnel Route Viewport (Fetched live from Google Maps Tile Servers + Web Mercator Projection)
+            // Real Google Maps Global Tunnel Route Viewport + Vector Graticule Fallback
             var useSatelliteLayer by remember(neu.isDark) { mutableStateOf(neu.isDark) }
             val hlCode = when (s.language) {
                 FoxyLanguage.FA -> "fa"
@@ -1732,7 +1773,7 @@ private fun WorldRouteMapCard(
                 mutableStateOf(GoogleWorldMapTileCache.get(mapCacheKey))
             }
 
-            LaunchedEffect(mapCacheKey) {
+            LaunchedEffect(mapCacheKey, isConnected) {
                 if (googleWorldBitmap == null) {
                     val fetched = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         fetchGoogleWorldMapBitmap(layer = googleMapLayer, hl = hlCode)
@@ -1748,7 +1789,7 @@ private fun WorldRouteMapCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(156.dp)
+                    .height(160.dp)
                     .neumorphicSunken(
                         shape = mapShape,
                         cornerRadius = 16.dp,
@@ -1765,13 +1806,12 @@ private fun WorldRouteMapCard(
                         contentScale = ContentScale.FillBounds,
                         modifier = Modifier.fillMaxSize(),
                     )
-                    // Subtle readability tint overlay so the encrypted tunnel arc & pins pop vividly on top of Google Maps
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(
-                                if (useSatelliteLayer) Color(0xFF0B101B).copy(alpha = 0.22f)
-                                else Color(0xFF0F172A).copy(alpha = 0.06f)
+                                if (useSatelliteLayer) Color(0xFF0B101B).copy(alpha = 0.24f)
+                                else Color(0xFF0F172A).copy(alpha = 0.08f)
                             ),
                     )
                 }
@@ -1780,92 +1820,136 @@ private fun WorldRouteMapCard(
                     val w = size.width
                     val h = size.height
 
-                    val originNorm = countryCodeToMercatorNorm(originCountryCode)
-                    val exitNorm = countryCodeToMercatorNorm(exitCountryCode)
-                    val startPt = Offset(originNorm.x * w, originNorm.y * h)
-                    val endPt = Offset(exitNorm.x * w, exitNorm.y * h)
-
-                    val midX = (startPt.x + endPt.x) * 0.5f
-                    val arcLift = (kotlin.math.abs(endPt.x - startPt.x) * 0.32f).coerceIn(22.dp.toPx(), 58.dp.toPx())
-                    val controlPt = Offset(midX, (minOf(startPt.y, endPt.y) - arcLift).coerceAtLeast(12.dp.toPx()))
-
-                    val arcPath = Path().apply {
-                        moveTo(startPt.x, startPt.y)
-                        quadraticTo(controlPt.x, controlPt.y, endPt.x, endPt.y)
+                    // Always draw subtle Mercator graticule grid (and continental landmasses when tiles are offline)
+                    val gridColor = if (loadedBitmap != null) {
+                        Color.White.copy(alpha = 0.08f)
+                    } else {
+                        neu.accent.copy(alpha = if (neu.isDark) 0.16f else 0.12f)
+                    }
+                    for (i in 1..7) {
+                        val gx = w * (i / 8f)
+                        drawLine(gridColor, Offset(gx, 0f), Offset(gx, h), strokeWidth = 1f)
+                    }
+                    for (j in 1..3) {
+                        val gy = h * (j / 4f)
+                        drawLine(gridColor, Offset(0f, gy), Offset(w, gy), strokeWidth = 1f)
                     }
 
-                    // Outer Glow of Route Arc
-                    drawPath(
-                        path = arcPath,
-                        color = routeColor.copy(alpha = if (isConnected) 0.38f else 0.22f),
-                        style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
-                    )
+                    if (loadedBitmap == null) {
+                        // Clean vector continental nodes when Google tiles are unreachable offline
+                        val continentColor = neu.textSecondary.copy(alpha = if (neu.isDark) 0.16f else 0.13f)
+                        val hubs = listOf(
+                            Offset(0.22f, 0.36f) to 28.dp.toPx(), // North America
+                            Offset(0.32f, 0.72f) to 20.dp.toPx(), // South America
+                            Offset(0.51f, 0.30f) to 24.dp.toPx(), // Europe
+                            Offset(0.54f, 0.58f) to 24.dp.toPx(), // Africa
+                            Offset(0.68f, 0.38f) to 32.dp.toPx(), // Asia
+                            Offset(0.83f, 0.76f) to 18.dp.toPx(), // Oceania
+                        )
+                        hubs.forEach { (norm, rad) ->
+                            drawCircle(
+                                color = continentColor,
+                                radius = rad,
+                                center = Offset(norm.x * w, norm.y * h),
+                            )
+                        }
+                    }
 
-                    // Dashed or Solid Main Route Arc
-                    drawPath(
-                        path = arcPath,
-                        color = routeColor,
-                        style = Stroke(
-                            width = 2.6.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            pathEffect = if (isConnected) null else PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f),
-                        ),
-                    )
+                    val originNorm = resolvedOriginCountryCode?.let { locationToMercatorNorm(it, null) }
+                    val exitNorm = resolvedExitCountryCode?.let { locationToMercatorNorm(it, resolvedExitCityCode) }
 
-                    // Animated Data Packet traveling from Origin to Exit along Geodesic Bezier
-                    if (isConnected || isConnecting) {
-                        val t = packetProgress
-                        val invT = 1f - t
-                        val pktX = invT * invT * startPt.x + 2f * invT * t * controlPt.x + t * t * endPt.x
-                        val pktY = invT * invT * startPt.y + 2f * invT * t * controlPt.y + t * t * endPt.y
+                    if (originNorm != null && exitNorm != null) {
+                        val startPt = Offset(originNorm.x * w, originNorm.y * h)
+                        val endPt = Offset(exitNorm.x * w, exitNorm.y * h)
+
+                        val midX = (startPt.x + endPt.x) * 0.5f
+                        val arcLift = (kotlin.math.abs(endPt.x - startPt.x) * 0.32f).coerceIn(20.dp.toPx(), 54.dp.toPx())
+                        val controlPt = Offset(midX, (minOf(startPt.y, endPt.y) - arcLift).coerceAtLeast(12.dp.toPx()))
+
+                        val arcPath = Path().apply {
+                            moveTo(startPt.x, startPt.y)
+                            quadraticTo(controlPt.x, controlPt.y, endPt.x, endPt.y)
+                        }
+
+                        // Outer Glow of Route Arc
+                        drawPath(
+                            path = arcPath,
+                            color = routeColor.copy(alpha = if (isConnected) 0.38f else 0.20f),
+                            style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
+                        )
+
+                        // Solid (Connected) or Dashed (Preview/Connecting) Main Route Arc
+                        drawPath(
+                            path = arcPath,
+                            color = routeColor,
+                            style = Stroke(
+                                width = 2.6.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                pathEffect = if (isConnected) null else PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f),
+                            ),
+                        )
+
+                        // Animated Data Packet traveling from Origin to Exit along Geodesic Bezier
+                        if (isConnected || isConnecting) {
+                            val t = packetProgress
+                            val invT = 1f - t
+                            val pktX = invT * invT * startPt.x + 2f * invT * t * controlPt.x + t * t * endPt.x
+                            val pktY = invT * invT * startPt.y + 2f * invT * t * controlPt.y + t * t * endPt.y
+                            drawCircle(
+                                color = routeColor.copy(alpha = 0.45f),
+                                radius = 9.dp.toPx(),
+                                center = Offset(pktX, pktY),
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 4.dp.toPx(),
+                                center = Offset(pktX, pktY),
+                            )
+                        }
+                    }
+
+                    // Origin Node Pin (Only drawn when real origin country is known)
+                    if (originNorm != null) {
+                        val startPt = Offset(originNorm.x * w, originNorm.y * h)
                         drawCircle(
-                            color = routeColor.copy(alpha = 0.45f),
-                            radius = 9.dp.toPx(),
-                            center = Offset(pktX, pktY),
+                            color = Color(0xFFFF5E1A).copy(alpha = 0.35f * pulseRadius),
+                            radius = 11.dp.toPx() * pulseRadius,
+                            center = startPt,
                         )
                         drawCircle(
                             color = Color.White,
-                            radius = 4.dp.toPx(),
-                            center = Offset(pktX, pktY),
+                            radius = 5.5.dp.toPx(),
+                            center = startPt,
+                        )
+                        drawCircle(
+                            color = Color(0xFFFF5E1A),
+                            radius = 3.8.dp.toPx(),
+                            center = startPt,
                         )
                     }
 
-                    // Origin Node Pin
-                    drawCircle(
-                        color = Color(0xFFFF5E1A).copy(alpha = 0.35f * pulseRadius),
-                        radius = 11.dp.toPx() * pulseRadius,
-                        center = startPt,
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 5.5.dp.toPx(),
-                        center = startPt,
-                    )
-                    drawCircle(
-                        color = Color(0xFFFF5E1A),
-                        radius = 3.8.dp.toPx(),
-                        center = startPt,
-                    )
-
-                    // Exit Server Node Pin
-                    drawCircle(
-                        color = routeColor.copy(alpha = 0.38f * pulseRadius),
-                        radius = 13.dp.toPx() * pulseRadius,
-                        center = endPt,
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 6.5.dp.toPx(),
-                        center = endPt,
-                    )
-                    drawCircle(
-                        color = routeColor,
-                        radius = 4.6.dp.toPx(),
-                        center = endPt,
-                    )
+                    // Exit Server Node Pin (Only drawn when real/selected exit server country is known)
+                    if (exitNorm != null) {
+                        val endPt = Offset(exitNorm.x * w, exitNorm.y * h)
+                        drawCircle(
+                            color = routeColor.copy(alpha = 0.38f * pulseRadius),
+                            radius = 13.dp.toPx() * pulseRadius,
+                            center = endPt,
+                        )
+                        drawCircle(
+                            color = Color.White,
+                            radius = 6.5.dp.toPx(),
+                            center = endPt,
+                        )
+                        drawCircle(
+                            color = routeColor,
+                            radius = 4.6.dp.toPx(),
+                            center = endPt,
+                        )
+                    }
                 }
 
-                // Google Maps Layer Switcher Pill (Satellite / Map) + Google Maps Attribution
+                // Google Maps Layer Switcher Pill + Status Attribution
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomBetweenRowAlignment)
@@ -1881,7 +1965,7 @@ private fun WorldRouteMapCard(
                             .padding(horizontal = 7.dp, vertical = 2.dp),
                     ) {
                         Text(
-                            text = "Google Maps",
+                            text = if (loadedBitmap != null) "Google Maps • Web Mercator" else "Mercator Grid • Offline Ready",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = fonts.headingFont,
                                 fontWeight = FontWeight.Bold,
@@ -1931,11 +2015,13 @@ private fun WorldRouteMapCard(
                         .background(neu.surfaceElevated.copy(alpha = 0.65f))
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                 ) {
-                    val originCountryLocalized = s.language.localizeCountryName(originCountryCode, originCountryCode)
+                    val originCountryLocalized = resolvedOriginCountryCode?.let {
+                        s.language.localizeCountryName(it, it)
+                    } ?: s.checking
                     Text(
                         text = when (s.language) {
-                            FoxyLanguage.FA -> "کشور مبدأ ($originCountryLocalized)"
-                            FoxyLanguage.AR -> "بلد المصدر ($originCountryLocalized)"
+                            FoxyLanguage.FA -> "مبدأ واقعی ($originCountryLocalized)"
+                            FoxyLanguage.AR -> "المصدر الحقيقي ($originCountryLocalized)"
                             FoxyLanguage.EN -> "ORIGIN ($originCountryLocalized)"
                         },
                         style = MaterialTheme.typography.labelSmall.copy(
@@ -1970,8 +2056,8 @@ private fun WorldRouteMapCard(
                 ) {
                     Text(
                         text = when (s.language) {
-                            FoxyLanguage.FA -> "سرور خروجی ($exitCountryName)"
-                            FoxyLanguage.AR -> "خادم الخروج ($exitCountryName)"
+                            FoxyLanguage.FA -> "خروجی تونل ($exitCountryName)"
+                            FoxyLanguage.AR -> "خروج النفق ($exitCountryName)"
                             FoxyLanguage.EN -> "EXIT ($exitCountryName)"
                         },
                         style = MaterialTheme.typography.labelSmall.copy(
@@ -2057,36 +2143,106 @@ private fun fetchGoogleWorldMapBitmap(
     }.getOrNull()
 }
 
-private fun countryCodeToMercatorNorm(code: String): Offset {
-    val (latDeg, lonDeg) = when (code.uppercase()) {
+private fun locationToMercatorNorm(countryCode: String, cityCode: String?): Offset {
+    val cityCoords: Pair<Double, Double>? = when (cityCode?.lowercase()?.trim()) {
+        "fra" -> 50.1109 to 8.6821      // Frankfurt
+        "ber" -> 52.5200 to 13.4050     // Berlin
+        "muc" -> 48.1351 to 11.5820     // Munich
+        "dus" -> 51.2277 to 6.7735      // Dusseldorf
+        "ams" -> 52.3676 to 4.9041      // Amsterdam
+        "lon" -> 51.5074 to -0.1278     // London
+        "man" -> 53.4808 to -2.2426     // Manchester
+        "par" -> 48.8566 to 2.3522      // Paris
+        "mrs" -> 43.2965 to 5.3698      // Marseille
+        "zrh" -> 47.3769 to 8.5417      // Zurich
+        "vie" -> 48.2082 to 16.3738     // Vienna
+        "mil" -> 45.4642 to 9.1900      // Milan
+        "rom" -> 41.9028 to 12.4964     // Rome
+        "mad" -> 40.4168 to -3.7038     // Madrid
+        "bcn" -> 41.3874 to 2.1686      // Barcelona
+        "sto" -> 59.3293 to 18.0686     // Stockholm
+        "mma" -> 55.6050 to 13.0038     // Malmo
+        "osl" -> 59.9139 to 10.7522     // Oslo
+        "hel" -> 60.1699 to 24.9384     // Helsinki
+        "waw" -> 52.2297 to 21.0122     // Warsaw
+        "prg" -> 50.0755 to 14.4378     // Prague
+        "otp", "buh" -> 44.4268 to 26.1025 // Bucharest
+        "nyc", "ewr" -> 40.7128 to -74.0060 // New York
+        "was", "iad" -> 38.9072 to -77.0369 // Washington DC
+        "chi", "ord" -> 41.8781 to -87.6298 // Chicago
+        "mia" -> 25.7617 to -80.1918    // Miami
+        "dal", "dfw" -> 32.7767 to -96.7970 // Dallas
+        "lax" -> 34.0522 to -118.2437   // Los Angeles
+        "sjc", "sfo" -> 37.3382 to -121.8863 // San Jose / SF
+        "sea" -> 47.6062 to -122.3321   // Seattle
+        "atl" -> 33.7490 to -84.3880    // Atlanta
+        "den" -> 39.7392 to -104.9903   // Denver
+        "tor", "yyz" -> 43.6532 to -79.3832 // Toronto
+        "van", "yvr" -> 49.2827 to -123.1207 // Vancouver
+        "mtl", "yul" -> 45.5017 to -73.5673 // Montreal
+        "sao", "gru" -> -23.5505 to -46.6333 // Sao Paulo
+        "sin" -> 1.3521 to 103.8198     // Singapore
+        "tyo", "nrt" -> 35.6762 to 139.6503 // Tokyo
+        "osa" -> 34.6937 to 135.5023    // Osaka
+        "hkg" -> 22.3193 to 114.1694    // Hong Kong
+        "syd" -> -33.8688 to 151.2093   // Sydney
+        "mel" -> -37.8136 to 144.9631   // Melbourne
+        "akl" -> -36.8485 to 174.7633   // Auckland
+        else -> null
+    }
+
+    val (latDeg, lonDeg) = cityCoords ?: when (countryCode.uppercase()) {
         "US" -> 38.9072 to -77.0369
         "CA" -> 56.1304 to -106.3468
+        "MX" -> 23.6345 to -102.5528
         "BR" -> -15.7975 to -47.8919
+        "AR" -> -34.6037 to -58.3816
+        "CL" -> -33.4489 to -70.6693
+        "CO" -> 4.7110 to -74.0721
         "GB", "UK" -> 51.5074 to -0.1278
+        "IE" -> 53.3498 to -6.2603
         "FR" -> 48.8566 to 2.3522
+        "BE" -> 50.8503 to 4.3517
         "NL" -> 52.3676 to 4.9041
-        "DE" -> 51.1657 to 10.4515
+        "DE" -> 50.1109 to 8.6821
         "CH" -> 46.8182 to 8.2275
         "AT" -> 47.5162 to 14.5501
         "IT" -> 41.8719 to 12.5674
         "ES" -> 40.4637 to -3.7492
-        "SE" -> 60.1282 to 18.6435
-        "NO" -> 60.4720 to 8.4689
-        "FI" -> 61.9241 to 25.7482
-        "PL" -> 51.9194 to 19.1451
-        "CZ" -> 49.8175 to 15.4730
-        "RO" -> 45.9432 to 24.9668
-        "TR" -> 38.9637 to 35.2433
-        "IR" -> 32.4279 to 53.6880
-        "AE" -> 23.4241 to 53.8478
+        "PT" -> 38.7223 to -9.1393
+        "SE" -> 59.3293 to 18.0686
+        "NO" -> 59.9139 to 10.7522
+        "DK" -> 55.6761 to 12.5683
+        "FI" -> 60.1699 to 24.9384
+        "PL" -> 52.2297 to 21.0122
+        "CZ" -> 50.0755 to 14.4378
+        "HU" -> 47.4979 to 19.0402
+        "RO" -> 44.4268 to 26.1025
+        "BG" -> 42.6977 to 23.3219
+        "GR" -> 37.9838 to 23.7275
+        "UA" -> 50.4501 to 30.5234
+        "TR" -> 39.9334 to 32.8597
+        "IR" -> 35.6892 to 51.3890
+        "IQ" -> 33.3152 to 44.3661
+        "SA" -> 24.7136 to 46.6753
+        "AE" -> 25.2048 to 55.2708
+        "IL" -> 32.0853 to 34.7818
+        "EG" -> 30.0444 to 31.2357
+        "ZA" -> -26.2041 to 28.0473
         "IN" -> 20.5937 to 78.9629
+        "PK" -> 30.3753 to 69.3451
         "SG" -> 1.3521 to 103.8198
-        "JP" -> 36.2048 to 138.2529
+        "MY" -> 3.1390 to 101.6869
+        "TH" -> 13.7563 to 100.5018
+        "ID" -> -6.2088 to 106.8456
+        "JP" -> 35.6762 to 139.6503
         "HK" -> 22.3193 to 114.1694
-        "KR" -> 35.9078 to 127.7669
-        "AU" -> -25.2744 to 133.7751
+        "TW" -> 25.0330 to 121.5654
+        "KR" -> 37.5665 to 126.9780
+        "AU" -> -33.8688 to 151.2093
+        "NZ" -> -36.8485 to 174.7633
         "RU" -> 55.7558 to 37.6173
-        else -> 51.1657 to 10.4515
+        else -> 48.0 to 12.0
     }
     val mercX = ((lonDeg + 180.0) / 360.0) * 1024.0
     val latRad = Math.toRadians(latDeg.coerceIn(-80.0, 80.0))

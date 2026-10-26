@@ -92,7 +92,7 @@ fun ServerListScreen(
     var searchQuery by remember { mutableStateOf("") }
 
     val selectedState by proxyStateStore.selectedProxyFlow.collectAsState()
-    val pingResults = remember { mutableStateMapOf<String, Int>() }
+    val pingResults = remember { mutableStateMapOf<String, PingUtil.PingMeasurement>() }
     val pingStates = remember { mutableStateMapOf<String, PingState>() }
 
     val neu = currentNeumorphicColors
@@ -368,7 +368,7 @@ fun ServerListScreen(
                                     val isSelected = row.country.code == selected?.countryCode && city.code == selected?.cityCode
 
                                     val pingKey = "${row.country.code}:${city.code}"
-                                    val pingMs = pingResults[pingKey]
+                                    val pingMeasurement = pingResults[pingKey]
                                     val pingState = pingStates[pingKey] ?: PingState.PENDING
 
                                     LaunchedEffect(pingKey) {
@@ -379,7 +379,7 @@ fun ServerListScreen(
                                             pingStates[pingKey] = PingState.FAILED
                                             return@LaunchedEffect
                                         }
-                                        val result = PingUtil.measureTcpLatencyMs(target.first, target.second)
+                                        val result = PingUtil.measureServerLatency(target.first, target.second)
                                         if (result != null) {
                                             pingResults[pingKey] = result
                                             pingStates[pingKey] = PingState.DONE
@@ -433,9 +433,9 @@ fun ServerListScreen(
                                                 )
                                             }
 
-                                            // Ping indicator badge
+                                            // Ping indicator badge with explicit test method (ICMP / TCP / TLS)
                                             val pingText = when {
-                                                pingMs != null -> s.language.formatPingLocalized(pingMs)
+                                                pingMeasurement != null -> "${pingMeasurement.method} • ${s.language.formatPingLocalized(pingMeasurement.latencyMs)}"
                                                 pingState == PingState.FAILED -> "\u2014"
                                                 else -> "\u2022\u2022\u2022"
                                             }
@@ -448,7 +448,8 @@ fun ServerListScreen(
                                                 Text(
                                                     text = pingText,
                                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = if (pingMs != null) statusColors.connected else neu.textSecondary,
+                                                    color = if (pingMeasurement != null) statusColors.connected else neu.textSecondary,
+                                                    maxLines = 1,
                                                 )
                                             }
 
