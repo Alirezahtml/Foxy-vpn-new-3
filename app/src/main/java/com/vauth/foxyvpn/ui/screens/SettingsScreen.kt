@@ -275,6 +275,10 @@ fun SettingsScreen(
     var islandQuickAppIconDp by remember { mutableFloatStateOf(settingsStore.dynamicIslandQuickAppIconSizeDp.toFloat()) }
     var islandShowAppNames by remember { mutableStateOf(settingsStore.dynamicIslandShowAppNames) }
     var islandDoubleTapAction by remember { mutableStateOf(settingsStore.dynamicIslandDoubleTapAction) }
+    var islandIndicatorStyle by remember { mutableStateOf(settingsStore.dynamicIslandIndicatorStyle) }
+    var islandShowJitterBadge by remember { mutableStateOf(settingsStore.dynamicIslandShowJitterBadge) }
+    var islandShowSecurityBadge by remember { mutableStateOf(settingsStore.dynamicIslandShowSecurityBadge) }
+    var islandShowNetworkActions by remember { mutableStateOf(settingsStore.dynamicIslandShowNetworkActions) }
     var mtuModeAuto by remember { mutableStateOf(settingsStore.mtuModeAuto) }
 
     // Dialog toggles
@@ -652,29 +656,29 @@ fun SettingsScreen(
         )
         SettingsCategory.DYNAMIC_ISLAND -> listOf(
             when (s.language) {
-                AppLanguage.FA -> "پایه و ابعاد"
+                AppLanguage.FA -> "پایه"
                 AppLanguage.AR -> "الحجم"
                 AppLanguage.EN -> "Core"
             },
             when (s.language) {
-                AppLanguage.FA -> "ظاهر و حرکت"
+                AppLanguage.FA -> "حرکت"
                 AppLanguage.AR -> "الحركة"
                 AppLanguage.EN -> "Motion"
             },
             when (s.language) {
-                AppLanguage.FA -> "امواج و اپ‌ها"
-                AppLanguage.AR -> "التطبيقات"
-                AppLanguage.EN -> "Apps"
+                AppLanguage.FA -> "نشانگر"
+                AppLanguage.AR -> "المؤشر"
+                AppLanguage.EN -> "Indicator"
             },
             when (s.language) {
-                AppLanguage.FA -> "نشانگرها"
-                AppLanguage.AR -> "المؤشرات"
-                AppLanguage.EN -> "Badges"
+                AppLanguage.FA -> "شبکه"
+                AppLanguage.AR -> "الشبكة"
+                AppLanguage.EN -> "Network"
             },
             when (s.language) {
-                AppLanguage.FA -> "جزئیات عمیق"
-                AppLanguage.AR -> "تفاصيل دقيقة"
-                AppLanguage.EN -> "Deep Studio"
+                AppLanguage.FA -> "استودیو"
+                AppLanguage.AR -> "استوديو"
+                AppLanguage.EN -> "Studio"
             },
         )
         SettingsCategory.PROTOCOL_NETWORK -> listOf(
@@ -977,7 +981,7 @@ fun SettingsScreen(
                                 if (subPageTitles.size > 1) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
                                     ) {
                                         subPageTitles.forEachIndexed { idx, tabLabel ->
                                             val isSelectedTab = subPage == idx
@@ -999,7 +1003,7 @@ fun SettingsScreen(
                                                         }
                                                     }
                                                     .clickable { selectedSubPage = idx }
-                                                    .padding(vertical = 9.dp, horizontal = 6.dp),
+                                                    .padding(vertical = 8.dp, horizontal = 3.dp),
                                                 contentAlignment = Alignment.Center,
                                             ) {
                                                 Text(
@@ -1007,9 +1011,11 @@ fun SettingsScreen(
                                                     style = MaterialTheme.typography.labelSmall.copy(
                                                         fontFamily = fonts.headingFont,
                                                         fontWeight = FontWeight.Bold,
+                                                        fontSize = if (subPageTitles.size >= 5) 11.sp else 12.sp,
                                                     ),
                                                     color = if (isSelectedTab) Color.White else neu.textPrimary,
                                                     maxLines = 1,
+                                                    softWrap = false,
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
                                             }
@@ -1511,29 +1517,83 @@ fun SettingsScreen(
                                                                 )
                                                                 if (dynamicIslandShowTowerWave) {
                                                                     Spacer(Modifier.height(6.dp))
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "تغییر نشانگر وضعیت و شبکه (۷ سبک زنده):"
+                                                                            AppLanguage.AR -> "تغيير مؤشر الحالة والشبكة:"
+                                                                            AppLanguage.EN -> "Status & Network Indicator Style (7 Modes):"
+                                                                        },
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textSecondary,
+                                                                    )
+                                                                    Spacer(Modifier.height(6.dp))
                                                                     FlowRow(
                                                                         modifier = Modifier.fillMaxWidth(),
                                                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                                         verticalArrangement = Arrangement.spacedBy(6.dp),
                                                                     ) {
-                                                                        DynamicIslandWaveStyle.entries.forEach { wavePreset ->
-                                                                            val selectedWave = dynamicIslandWaveStyle == wavePreset
+                                                                        com.vauth.foxyvpn.data.DynamicIslandIndicatorStyle.entries.forEach { indPreset ->
+                                                                            val selectedInd = islandIndicatorStyle == indPreset
+                                                                            val indLabel = when (s.language) {
+                                                                                AppLanguage.FA -> indPreset.labelFa
+                                                                                AppLanguage.AR -> indPreset.labelAr
+                                                                                AppLanguage.EN -> indPreset.labelEn
+                                                                            }
                                                                             Box(
                                                                                 modifier = Modifier
                                                                                     .neumorphicTouchBounce()
                                                                                     .clip(RoundedCornerShape(10.dp))
-                                                                                    .background(if (selectedWave) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                                    .background(if (selectedInd) neu.accent else neu.accent.copy(alpha = 0.12f))
                                                                                     .clickable {
-                                                                                        dynamicIslandWaveStyle = wavePreset
-                                                                                        settingsStore.dynamicIslandWaveStyle = wavePreset
+                                                                                        islandIndicatorStyle = indPreset
+                                                                                        settingsStore.dynamicIslandIndicatorStyle = indPreset
                                                                                     }
                                                                                     .padding(horizontal = 9.dp, vertical = 6.dp),
                                                                             ) {
                                                                                 Text(
-                                                                                    text = wavePreset.localizedLabel(s.language),
+                                                                                    text = indLabel,
                                                                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                                                    color = if (selectedWave) Color.White else neu.textPrimary,
+                                                                                    color = if (selectedInd) Color.White else neu.textPrimary,
                                                                                 )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    if (islandIndicatorStyle == com.vauth.foxyvpn.data.DynamicIslandIndicatorStyle.TOWER_WAVE) {
+                                                                        Spacer(Modifier.height(8.dp))
+                                                                        Text(
+                                                                            text = when (s.language) {
+                                                                                AppLanguage.FA -> "سبک موج آنتن:"
+                                                                                AppLanguage.AR -> "نمط الموجة:"
+                                                                                AppLanguage.EN -> "Tower Wave Preset:"
+                                                                            },
+                                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                            color = neu.textSecondary,
+                                                                        )
+                                                                        Spacer(Modifier.height(4.dp))
+                                                                        FlowRow(
+                                                                            modifier = Modifier.fillMaxWidth(),
+                                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                                        ) {
+                                                                            DynamicIslandWaveStyle.entries.forEach { wavePreset ->
+                                                                                val selectedWave = dynamicIslandWaveStyle == wavePreset
+                                                                                Box(
+                                                                                    modifier = Modifier
+                                                                                        .neumorphicTouchBounce()
+                                                                                        .clip(RoundedCornerShape(10.dp))
+                                                                                        .background(if (selectedWave) neu.accent else neu.accent.copy(alpha = 0.12f))
+                                                                                        .clickable {
+                                                                                            dynamicIslandWaveStyle = wavePreset
+                                                                                            settingsStore.dynamicIslandWaveStyle = wavePreset
+                                                                                        }
+                                                                                        .padding(horizontal = 9.dp, vertical = 6.dp),
+                                                                                ) {
+                                                                                    Text(
+                                                                                        text = wavePreset.localizedLabel(s.language),
+                                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                        color = if (selectedWave) Color.White else neu.textPrimary,
+                                                                                    )
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
@@ -1555,10 +1615,47 @@ fun SettingsScreen(
                                                                         value = s.excludedAppsCount(dynamicIslandPinnedApps.size),
                                                                         onClick = { showIslandPinnedAppsDialog = true },
                                                                     )
+                                                                    Spacer(Modifier.height(6.dp))
+                                                                    SettingToggleRow(
+                                                                        title = when (s.language) {
+                                                                            AppLanguage.FA -> "نمایش نام برنامه‌ها کنار آیکون"
+                                                                            AppLanguage.AR -> "إظهار أسماء التطبيقات"
+                                                                            AppLanguage.EN -> "Show App Names Next to Icons"
+                                                                        },
+                                                                        subtitle = when (s.language) {
+                                                                            AppLanguage.FA -> "در صورت غیرفعال بودن، فقط آیکون برنامه‌ها به‌صورت فشرده نمایش داده می‌شود"
+                                                                            AppLanguage.AR -> "عرض الأيقونات فقط عند التعطيل"
+                                                                            AppLanguage.EN -> "Show compact app icons only when disabled"
+                                                                        },
+                                                                        checked = islandShowAppNames,
+                                                                        onCheckedChange = {
+                                                                            islandShowAppNames = it
+                                                                            settingsStore.dynamicIslandShowAppNames = it
+                                                                        },
+                                                                    )
                                                                 }
                                                             }
                                                             3 -> {
-                                                                // Sub-page 3: Compact Telemetry Badges Grid (Concise labels + scaled switches so zero text truncates)
+                                                                // Sub-page 3: Network Actions & Telemetry Badges Grid
+                                                                SettingToggleRow(
+                                                                    title = when (s.language) {
+                                                                        AppLanguage.FA -> "نوار ابزار سریع شبکه در داینامیک آیلند"
+                                                                        AppLanguage.AR -> "شريط أدوات الشبكة السريع"
+                                                                        AppLanguage.EN -> "Quick Network Action Bar in Island"
+                                                                    },
+                                                                    subtitle = when (s.language) {
+                                                                        AppLanguage.FA -> "تست پینگ زنده، تغییر آنی پروتکل (Auto/H2/H1.1) و کپی پروکسی بدون اسپانسر تلگرام"
+                                                                        AppLanguage.AR -> "فحص البينج الحي وتبديل البروتوكول ونسخ بروكسي تيليجرام"
+                                                                        AppLanguage.EN -> "One-tap Live TCP Ping, Protocol Mode switch & Zero-Sponsor Telegram SOCKS5"
+                                                                    },
+                                                                    checked = islandShowNetworkActions,
+                                                                    onCheckedChange = {
+                                                                        islandShowNetworkActions = it
+                                                                        settingsStore.dynamicIslandShowNetworkActions = it
+                                                                    },
+                                                                )
+                                                                HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 8.dp))
+
                                                                 val badgeItems = listOf(
                                                                     Triple(
                                                                         when (s.language) {
@@ -1582,6 +1679,30 @@ fun SettingsScreen(
                                                                         { v: Boolean ->
                                                                             dynamicIslandShowPing = v
                                                                             settingsStore.dynamicIslandShowPing = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "نوسان پینگ (Jitter)"
+                                                                            AppLanguage.AR -> "تذبذب البينج (Jitter)"
+                                                                            AppLanguage.EN -> "Live Jitter (±ms)"
+                                                                        },
+                                                                        islandShowJitterBadge,
+                                                                        { v: Boolean ->
+                                                                            islandShowJitterBadge = v
+                                                                            settingsStore.dynamicIslandShowJitterBadge = v
+                                                                        },
+                                                                    ),
+                                                                    Triple(
+                                                                        when (s.language) {
+                                                                            AppLanguage.FA -> "سپر امنیت تونل"
+                                                                            AppLanguage.AR -> "درع أمان النفق"
+                                                                            AppLanguage.EN -> "TLS Guard Badge"
+                                                                        },
+                                                                        islandShowSecurityBadge,
+                                                                        { v: Boolean ->
+                                                                            islandShowSecurityBadge = v
+                                                                            settingsStore.dynamicIslandShowSecurityBadge = v
                                                                         },
                                                                     ),
                                                                     Triple(
@@ -1722,63 +1843,90 @@ fun SettingsScreen(
                                                                 }
                                                             }
                                                             else -> {
-                                                                // Sub-page 4: Deep Micro-Detail Geometry, Physics & Double-Tap Studio
+                                                                // Sub-page 4: Deep Micro-Detail Geometry, Typography, Physics & Double-Tap Studio
+                                                                // Paired 2-column responsive layout so all controls fit cleanly without clipping
                                                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                                     Text(
                                                                         text = when (s.language) {
-                                                                            AppLanguage.FA -> "ارتفاع کپسول بسته (dp)"
-                                                                            AppLanguage.AR -> "ارتفاع الكبسولة (dp)"
-                                                                            AppLanguage.EN -> "Collapsed Height (dp)"
+                                                                            AppLanguage.FA -> "ارتفاع بسته (dp) / پهنای باز (%)"
+                                                                            AppLanguage.AR -> "الارتفاع (dp) / العرض الموسع (%)"
+                                                                            AppLanguage.EN -> "Collapsed Height / Expanded Width"
                                                                         },
                                                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                                                         color = neu.textPrimary,
                                                                     )
                                                                     Text(
-                                                                        text = "${islandCollapsedHeightDp.roundToInt()} dp",
+                                                                        text = "${islandCollapsedHeightDp.roundToInt()}dp • ${islandExpandedWidthPct.roundToInt()}%",
                                                                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
                                                                         color = neu.accent,
                                                                     )
                                                                 }
-                                                                Slider(
-                                                                    value = islandCollapsedHeightDp,
-                                                                    onValueChange = {
-                                                                        islandCollapsedHeightDp = it
-                                                                        settingsStore.dynamicIslandCollapsedHeightDp = it.roundToInt()
-                                                                    },
-                                                                    valueRange = 32f..56f,
-                                                                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
-                                                                )
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Slider(
+                                                                        value = islandCollapsedHeightDp,
+                                                                        onValueChange = {
+                                                                            islandCollapsedHeightDp = it
+                                                                            settingsStore.dynamicIslandCollapsedHeightDp = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 32f..56f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                    Slider(
+                                                                        value = islandExpandedWidthPct,
+                                                                        onValueChange = {
+                                                                            islandExpandedWidthPct = it
+                                                                            settingsStore.dynamicIslandExpandedWidthPercent = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 82f..100f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                }
 
                                                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                                     Text(
                                                                         text = when (s.language) {
-                                                                            AppLanguage.FA -> "پهنای کارت بازشده (%)"
-                                                                            AppLanguage.AR -> "عرض البطاقة الموسعة (%)"
-                                                                            AppLanguage.EN -> "Expanded Sheet Width (%)"
+                                                                            AppLanguage.FA -> "مقیاس فونت (%) / آیکون اپ (dp)"
+                                                                            AppLanguage.AR -> "حجم الخط (%) / حجم الأيقونة (dp)"
+                                                                            AppLanguage.EN -> "Font Scale (%) / App Icon (dp)"
                                                                         },
                                                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                                                         color = neu.textPrimary,
                                                                     )
                                                                     Text(
-                                                                        text = "${islandExpandedWidthPct.roundToInt()}%",
+                                                                        text = "${islandFontScalePct.roundToInt()}% • ${islandQuickAppIconDp.roundToInt()}dp",
                                                                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = fonts.monoFont, fontWeight = FontWeight.Bold),
                                                                         color = neu.accent,
                                                                     )
                                                                 }
-                                                                Slider(
-                                                                    value = islandExpandedWidthPct,
-                                                                    onValueChange = {
-                                                                        islandExpandedWidthPct = it
-                                                                        settingsStore.dynamicIslandExpandedWidthPercent = it.roundToInt()
-                                                                    },
-                                                                    valueRange = 82f..100f,
-                                                                    colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
-                                                                )
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Slider(
+                                                                        value = islandFontScalePct,
+                                                                        onValueChange = {
+                                                                            islandFontScalePct = it
+                                                                            settingsStore.dynamicIslandFontScalePercent = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 80f..125f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                    Slider(
+                                                                        value = islandQuickAppIconDp,
+                                                                        onValueChange = {
+                                                                            islandQuickAppIconDp = it
+                                                                            settingsStore.dynamicIslandQuickAppIconSizeDp = it.roundToInt()
+                                                                        },
+                                                                        valueRange = 28f..48f,
+                                                                        modifier = Modifier.weight(1f),
+                                                                        colors = SliderDefaults.colors(thumbColor = neu.accent, activeTrackColor = neu.accent),
+                                                                    )
+                                                                }
 
                                                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                                     Text(
                                                                         text = when (s.language) {
-                                                                            AppLanguage.FA -> "ضخامت کادر / عمق سایه"
+                                                                            AppLanguage.FA -> "ضخامت کادر / عمق سایه سه‌بعدی"
                                                                             AppLanguage.AR -> "سمك الإطار / عمق الظل"
                                                                             AppLanguage.EN -> "Border Width / 3D Shadow"
                                                                         },
@@ -1817,7 +1965,7 @@ fun SettingsScreen(
                                                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                                     Text(
                                                                         text = when (s.language) {
-                                                                            AppLanguage.FA -> "فیزیک فنر (نرمی / سرعت)"
+                                                                            AppLanguage.FA -> "فیزیک فنر (نرمی / سرعت بازشدن)"
                                                                             AppLanguage.AR -> "فيزياء الزنبرك (النعومة / السرعة)"
                                                                             AppLanguage.EN -> "Spring Physics (Damping / Stiffness)"
                                                                         },
@@ -1853,16 +2001,56 @@ fun SettingsScreen(
                                                                     )
                                                                 }
 
-                                                                Text(
-                                                                    text = when (s.language) {
-                                                                        AppLanguage.FA -> "عملیات دو بار ضربه (Double-Tap):"
-                                                                        AppLanguage.AR -> "إجراء النقر المزدوج:"
-                                                                        AppLanguage.EN -> "Double-Tap Action:"
-                                                                    },
-                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                                    color = neu.textSecondary,
-                                                                )
-                                                                Spacer(Modifier.height(4.dp))
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                ) {
+                                                                    Text(
+                                                                        text = when (s.language) {
+                                                                            AppLanguage.FA -> "عملیات دو بار ضربه (Double-Tap):"
+                                                                            AppLanguage.AR -> "إجراء النقر المزدوج:"
+                                                                            AppLanguage.EN -> "Double-Tap Action:"
+                                                                        },
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = neu.textSecondary,
+                                                                    )
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .clip(RoundedCornerShape(8.dp))
+                                                                            .background(neu.accent.copy(alpha = 0.12f))
+                                                                            .clickable {
+                                                                                islandCollapsedHeightDp = 40f
+                                                                                settingsStore.dynamicIslandCollapsedHeightDp = 40
+                                                                                islandExpandedWidthPct = 96f
+                                                                                settingsStore.dynamicIslandExpandedWidthPercent = 96
+                                                                                islandFontScalePct = 100f
+                                                                                settingsStore.dynamicIslandFontScalePercent = 100
+                                                                                islandQuickAppIconDp = 36f
+                                                                                settingsStore.dynamicIslandQuickAppIconSizeDp = 36
+                                                                                islandBorderWidthDp = 1.2f
+                                                                                settingsStore.dynamicIslandBorderWidthDp = 1.2f
+                                                                                islandShadowDepthDp = 8f
+                                                                                settingsStore.dynamicIslandShadowDepthDp = 8
+                                                                                islandSpringDampingPct = 82f
+                                                                                settingsStore.dynamicIslandSpringDampingPercent = 82
+                                                                                islandSpringStiffness = 380f
+                                                                                settingsStore.dynamicIslandSpringStiffness = 380
+                                                                            }
+                                                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                                                    ) {
+                                                                        Text(
+                                                                            text = when (s.language) {
+                                                                                AppLanguage.FA -> "بازنشانی پیش‌فرض"
+                                                                                AppLanguage.AR -> "إعادة ضبط"
+                                                                                AppLanguage.EN -> "Reset Defaults"
+                                                                            },
+                                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                            color = neu.accent,
+                                                                        )
+                                                                    }
+                                                                }
+                                                                Spacer(Modifier.height(6.dp))
                                                                 FlowRow(
                                                                     modifier = Modifier.fillMaxWidth(),
                                                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1883,7 +2071,7 @@ fun SettingsScreen(
                                                                                     islandDoubleTapAction = act
                                                                                     settingsStore.dynamicIslandDoubleTapAction = act
                                                                                 }
-                                                                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                                                                                .padding(horizontal = 9.dp, vertical = 6.dp),
                                                                         ) {
                                                                             Text(
                                                                                 text = lbl,
@@ -1897,6 +2085,7 @@ fun SettingsScreen(
                                                         }
                                                     }
                                                 }
+                                                Spacer(Modifier.height(12.dp))
                                             }
                                         }
 
@@ -2746,7 +2935,17 @@ fun SettingsScreen(
                                                                 isInstagram = true,
                                                                 onClick = {
                                                                     runCatching {
-                                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(INSTAGRAM_URL)))
+                                                                        val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://instagram.com/_u/aliem_061")).apply {
+                                                                            setPackage("com.instagram.android")
+                                                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                        }
+                                                                        context.startActivity(appIntent)
+                                                                    }.onFailure {
+                                                                        runCatching {
+                                                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(INSTAGRAM_URL)).apply {
+                                                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                            })
+                                                                        }
                                                                     }
                                                                 },
                                                             )
@@ -2757,9 +2956,32 @@ fun SettingsScreen(
                                                                 isInstagram = false,
                                                                 onClick = {
                                                                     runCatching {
-                                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_URL)))
+                                                                        val tgDeepLink = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=aliem_061")).apply {
+                                                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                        }
+                                                                        context.startActivity(tgDeepLink)
+                                                                    }.onFailure {
+                                                                        runCatching {
+                                                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_URL)).apply {
+                                                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                            })
+                                                                        }
                                                                     }
                                                                 },
+                                                            )
+                                                            HorizontalDivider(color = neu.textSecondary.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 10.dp))
+                                                            SettingClickableRow(
+                                                                title = when (s.language) {
+                                                                    AppLanguage.FA -> "وضعیت اسپانسر پروکسی تلگرام"
+                                                                    AppLanguage.AR -> "حالة القنوات الراعية في تيليجرام"
+                                                                    AppLanguage.EN -> "Telegram Proxy Sponsor Policy"
+                                                                },
+                                                                value = when (s.language) {
+                                                                    AppLanguage.FA -> "۱۰۰٪ بدون کانال اسپانسر (Loopback)"
+                                                                    AppLanguage.AR -> "بدون قنوات إعلانية راعية ١٠٠٪"
+                                                                    AppLanguage.EN -> "100% Zero Sponsor Channels"
+                                                                },
+                                                                onClick = {},
                                                             )
                                                         }
                                                     }

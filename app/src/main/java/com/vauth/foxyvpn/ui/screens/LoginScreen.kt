@@ -108,7 +108,7 @@ fun LoginScreen(
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var code by rememberSaveable { mutableStateOf("") }
-    var awaitingTwoFactor by rememberSaveable { mutableStateOf(authRepository.pendingSessionToken != null) }
+    var awaitingTwoFactor by rememberSaveable { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -116,6 +116,13 @@ fun LoginScreen(
     val neu = currentNeumorphicColors
     val s = currentFoxyStrings
     val fonts = currentFoxyFonts
+
+    DisposableEffect(Unit) {
+        if (!awaitingTwoFactor) {
+            authRepository.clearPendingSession()
+        }
+        onDispose { }
+    }
 
     BackHandler(enabled = showInAppMozillaWeb || awaitingTwoFactor) {
         if (showInAppMozillaWeb) {
@@ -511,6 +518,57 @@ fun LoginScreen(
                                         s.loginVerifyButton,
                                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                         color = Color.White,
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            authRepository.clearPendingSession()
+                                            awaitingTwoFactor = false
+                                            errorMessage = null
+                                            code = ""
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = when (s.language) {
+                                            FoxyLanguage.FA -> "بازگشت به ورود عادی"
+                                            FoxyLanguage.AR -> "العودة لتسجيل الدخول"
+                                            FoxyLanguage.EN -> "Back to Sign In"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = neu.textSecondary,
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            scope.launch {
+                                                authRepository.resendVerificationCodeIfNeeded()
+                                            }
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = when (s.language) {
+                                            FoxyLanguage.FA -> "ارسال مجدد کد"
+                                            FoxyLanguage.AR -> "إعادة إرسال الرمز"
+                                            FoxyLanguage.EN -> "Resend Code"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = neu.accent,
                                     )
                                 }
                             }

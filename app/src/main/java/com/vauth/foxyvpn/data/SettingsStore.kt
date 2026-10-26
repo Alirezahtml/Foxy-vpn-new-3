@@ -334,6 +334,27 @@ enum class DynamicIslandDoubleTapAction(
     }
 }
 
+enum class DynamicIslandIndicatorStyle(
+    val labelEn: String,
+    val labelFa: String,
+    val labelAr: String,
+) {
+    TOWER_WAVE("Tower Wave", "موج دکل زنده", "موجة البرج"),
+    PULSE_ORB("Pulse Orb", "گوی نوری تپنده", "الكرة النابضة"),
+    RADAR_SWEEP("Radar Sweep", "اسکنر راداری", "ماسح الرادار"),
+    EQUALIZER_BARS("Equalizer", "اکولایزر شبکه", "موازن الشبكة"),
+    SHIELD_GUARD("Cyber Shield", "سپر امنیتی", "الدرع الأمني"),
+    SIGNAL_BARS("Signal Antenna", "آنتن سیگنال", "أبراج الإشارة"),
+    MINIMAL_RING("Minimal Ring", "حلقه نئون", "حلقة نيون"),
+    ;
+
+    fun localizedLabel(lang: AppLanguage): String = when (lang) {
+        AppLanguage.EN -> labelEn
+        AppLanguage.FA -> labelFa
+        AppLanguage.AR -> labelAr
+    }
+}
+
 enum class DynamicIslandMotionStyle(
     val label: String,
     val persianLabel: String,
@@ -607,6 +628,36 @@ class SettingsStore(context: Context) {
         } ?: DynamicIslandDoubleTapAction.EXPAND
         set(value) {
             prefs.edit().putString("dynamic_island_double_tap_action", value.name).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandIndicatorStyle: DynamicIslandIndicatorStyle
+        get() = DynamicIslandIndicatorStyle.entries.firstOrNull {
+            it.name == prefs.getString("dynamic_island_indicator_style", null)
+        } ?: DynamicIslandIndicatorStyle.TOWER_WAVE
+        set(value) {
+            prefs.edit().putString("dynamic_island_indicator_style", value.name).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandShowJitterBadge: Boolean
+        get() = prefs.getBoolean("dynamic_island_show_jitter_badge", true)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_show_jitter_badge", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandShowSecurityBadge: Boolean
+        get() = prefs.getBoolean("dynamic_island_show_security_badge", true)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_show_security_badge", value).apply()
+            _islandConfigRevision.value++
+        }
+
+    var dynamicIslandShowNetworkActions: Boolean
+        get() = prefs.getBoolean("dynamic_island_show_network_actions", true)
+        set(value) {
+            prefs.edit().putBoolean("dynamic_island_show_network_actions", value).apply()
             _islandConfigRevision.value++
         }
 

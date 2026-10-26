@@ -68,20 +68,78 @@ class FxaAuthRepository(
             code.replace(Regex("[\\p{Z}\\u200B-\\u200D\\uFEFF\\u00A0\\s]+"), "").trim()
     }
 
+    @Volatile
+    private var lastCodeRequestEpochMs: Long = 0L
+
     suspend fun startLogin(email: String, password: String): Result<Boolean> = runCatching {
         val cleanEmail = normalizeEmail(email)
         tokenStore.pendingAccountEmail = cleanEmail
-        val data = loginAttempt(cleanEmail, password)
+
+        // 1. If this account already has a saved refresh/access token on device, try restoring it directly first
+        // so returning users are never needlessly asked for an email verification code.
+        val existingSaved = runCatching {
+            tokenStore.loadAccounts().firstOrNull { it.email.equals(cleanEmail, ignoreCase = true) }
+        }.getOrNull()
+        if (existingSaved != null && (!existingSaved.refreshToken.isNullOrBlank() || existingSaved.accessToken.isNotBlank())) {
+            val switched = tokenStore.switchToAccount(cleanEmail)
+            if (switched) {
+                val restoredOk = runCatching {
+                    ensureFreshAccessToken(force = false)
+                    true
+                }.getOrDefault(false)
+                if (restoredOk) {
+                    clearPendingSession()
+                    return@runCatching false
+                }
+            }
+        }
+
+        // 2. Perform standard FxA login WITHOUT forcing email-2fa verificationMethod
+        val data = loginAttempt(cleanEmail, password, withVerificationMethod = false)
         val sessionToken = data.getString("sessionToken")
         pendingSessionToken = sessionToken
         val verified = data.optBoolean("verified", false)
-        if (!verified) {
-            true
-        } else {
+
+        if (verified) {
             completeLogin(sessionToken, cleanEmail)
             clearPendingSession()
             false
+        } else {
+            // 3. Attempt direct OAuth token grant first even when session reports unverified;
+            // only prompt for an email code if the server strictly rejects unverified token exchange.
+            val directGrantSucceeded = try {
+                completeLogin(sessionToken, cleanEmail)
+                clearPendingSession()
+                true
+            } catch (apiErr: FxaApiError) {
+                false
+            }
+            if (directGrantSucceeded) {
+                false
+            } else {
+                true
+            }
         }
+    }
+
+    suspend fun quickSignInWithSavedAccount(email: String): Result<Unit> = runCatching {
+        val cleanEmail = normalizeEmail(email)
+        if (!tokenStore.switchToAccount(cleanEmail)) {
+            error("Saved account not found")
+        }
+        ensureFreshAccessToken(force = false)
+        clearPendingSession()
+    }
+
+    suspend fun resendVerificationCodeIfNeeded(): Result<Boolean> = runCatching {
+        val now = System.currentTimeMillis()
+        if (now - lastCodeRequestEpochMs < 30_000L) {
+            return@runCatching false
+        }
+        val sessionToken = pendingSessionToken ?: error("No pending FxA session.")
+        fxaDo("POST", "/session/resend_code", sessionToken = sessionToken, jsonBody = JSONObject())
+        lastCodeRequestEpochMs = now
+        true
     }
 
     suspend fun startSignUp(email: String, password: String): Result<Boolean> = runCatching {
@@ -91,14 +149,28 @@ class FxaAuthRepository(
             put("email", cleanEmail)
             put("authPW", deriveAuthPw(cleanEmail, password))
             put("service", FIREFOX_CLIENT_ID)
-            put("verificationMethod", VERIFICATION_METHOD_EMAIL_2FA)
         }
-        val data = fxaDo("POST", "/account/create?keys=true", jsonBody = body)
+        val data = try {
+            fxaDo("POST", "/account/create?keys=true", jsonBody = body)
+        } catch (e: FxaApiError) {
+            val fallbackBody = JSONObject().apply {
+                put("email", cleanEmail)
+                put("authPW", deriveAuthPw(cleanEmail, password))
+                put("service", FIREFOX_CLIENT_ID)
+                put("verificationMethod", VERIFICATION_METHOD_EMAIL_2FA)
+            }
+            fxaDo("POST", "/account/create?keys=true", jsonBody = fallbackBody)
+        }
         val sessionToken = data.getString("sessionToken")
         pendingSessionToken = sessionToken
         val verified = data.optBoolean("verified", false)
         if (!verified) {
-            true
+            val directOk = runCatching {
+                completeLogin(sessionToken, cleanEmail)
+                clearPendingSession()
+                true
+            }.getOrDefault(false)
+            !directOk
         } else {
             completeLogin(sessionToken, cleanEmail)
             clearPendingSession()
@@ -237,7 +309,7 @@ class FxaAuthRepository(
         clearPendingSession()
     }
 
-    private suspend fun loginAttempt(email: String, password: String, withVerificationMethod: Boolean = true): JSONObject {
+    private suspend fun loginAttempt(email: String, password: String, withVerificationMethod: Boolean = false): JSONObject {
         val body = JSONObject().apply {
             put("email", email)
             put("authPW", deriveAuthPw(email, password))

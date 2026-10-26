@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -2123,7 +2124,40 @@ private fun TelegramProxyToolPanel(
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
+
+                // 100% Zero-Sponsor Guarantee Badge (No forced Telegram sponsor channels)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(statusColors.connected.copy(alpha = 0.12f))
+                        .border(1.dp, statusColors.connected.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Shield,
+                            contentDescription = null,
+                            tint = statusColors.connected,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = when (s.language) {
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.FA -> "تضمین ۱۰۰٪ بدون کانال اسپانسر تبلیغاتی • پروکسی محلی خالص SOCKS5 روی 127.0.0.1"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.AR -> "ضمان ١٠٠٪ بدون قنوات راعية إجبارية • بروكسي SOCKS5 محلي نقي"
+                                com.vauth.foxyvpn.ui.theme.FoxyLanguage.EN -> "100% Zero Forced Sponsor Channels • Pure Local Loopback SOCKS5 Proxy"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = statusColors.connected,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
 
                 // Real Host & Port Tiles
                 Row(
